@@ -1,0 +1,17 @@
+# Nextflow runtime / logs
+.nextflow/
+.nextflow.log*
+work/
+logs/
+results/
+tests/work/
+tests/output/
+tests/output_real/
+
+# Launcher output
+*.out
+*.err
+
+# Misc
+.DS_Store
+*~
