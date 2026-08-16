@@ -1,6 +1,9 @@
 # Nextflow runtime / logs
 .nextflow/
 .nextflow.log*
+
+# Test input data (too large for git; fetch separately)
+tests/data/input/
 work/
 logs/
 results/

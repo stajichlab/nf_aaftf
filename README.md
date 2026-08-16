@@ -143,7 +143,7 @@ conf/test.config         -stub-run / tiny-profile validation
 modules/aaftf/<STEP>/main.nf   one process per AAFTF step
 run_aaftf.sh             sbatch launcher for the Nextflow head process
 samples.csv              run sample sheet (reads in input/)
-tests/data/              ~1.2M-read real subsamples (M40, V11) + test_sample sheet
+tests/data/              sample sheet; input/ FASTQs are too large for git (fetch separately)
 ```
 
 ## Validated end-to-end (2026-08-16)
