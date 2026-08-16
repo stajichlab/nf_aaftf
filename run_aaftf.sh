@@ -6,8 +6,6 @@
 # The head process must outlive the whole run and must NOT live on the login
 # node; it submits each AAFTF step as its own SLURM job through the slurm
 # executor. Keep the head on a long-limit partition with a small footprint.
-
-#SBATCH -p epyc
 #SBATCH -N 1
 #SBATCH -n 2
 #SBATCH --mem 8G
