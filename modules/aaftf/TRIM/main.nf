@@ -11,13 +11,31 @@ process AFFTF_TRIM {
     path "trim_*.json", emit: json, optional: true
 
     script:
-    def dedup   = params.dedup ? '--dedup' : ''
-    def cuttail = params.PHRED > 0 ? '--cuttail' : ''
+    // Pass-1 trimer: fastp (default, adds dedup+merge+3' qual trim) or
+    // trimmomatic (separate adaptor/leading/trailing/sliding-window knobs).
+    // Only fastp emits a merged read set (_MG); trimmomatic yields an empty one.
+    def m1      = params.trim_method1 ?: 'fastp'
+    def fastp   = m1.toLowerCase() == 'fastp'
+    def dedup   = fastp && params.dedup ? '--dedup' : ''
+    def merge   = fastp ? '--merge' : ''
+    def cuttail = (fastp && params.PHRED > 0) ? '--cuttail' : ''
+    def trimmomatic_args = fastp ? '' : """
+        --trimmomatic_adaptors ${params.trimmomatic_adaptors} \\
+        --trimmomatic_clip ${params.trimmomatic_clip} \\
+        --trimmomatic_leadingwindow ${params.trimmomatic_leadingwindow} \\
+        --trimmomatic_trailingwindow ${params.trimmomatic_trailingwindow} \\
+        --trimmomatic_slidingwindow ${params.trimmomatic_slidingwindow} \\
+        --trimmomatic_quality ${params.trimmomatic_quality}
+        """
+    def merged_out = fastp ? "mv ${sample}_pass1_MG.fastq.gz ${sample}_MG.fastq.gz" :
+                             "gzip -c /dev/null > ${sample}_MG.fastq.gz"
     """
-    # Pass 1: fastp — dedup + merge + 3' quality trimming (cuttail using PHRED).
-    AAFTF trim --method fastp \
-        ${dedup} --merge ${cuttail} --minlen ${params.minlen} \
-        -c ${task.cpus} -m 8 \
+    # Pass 1: ${m1} — QC + adaptor trimming. fastp adds dedup + merge + 3' qual
+    # (cuttail using PHRED); trimmomatic uses its own leading/trailing/sliding
+    # window settings.
+    AAFTF trim --method ${m1} \
+        ${dedup} ${merge} ${cuttail} --minlen ${params.minlen} \
+        -c ${task.cpus} -m 8 ${trimmomatic_args} \
         --left ${reads1} --right ${reads2} \
         -o ${sample}_pass1
 
@@ -34,8 +52,9 @@ process AFFTF_TRIM {
         out=${sample}_ivl.fq
     reformat.sh in=${sample}_ivl.fq out1=${sample}_1P.fastq.gz out2=${sample}_2P.fastq.gz
 
-    # Merge-only reads (from pass 1) pass forward as the single-end set.
-    mv ${sample}_pass1_MG.fastq.gz ${sample}_MG.fastq.gz
+    # Merge-only reads (from fastp pass 1) pass forward as the single-end set.
+    # Trimmomatic has no merge step, so an empty _MG is emitted for it.
+    ${merged_out}
     """
 
     stub:

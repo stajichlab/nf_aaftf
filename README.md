@@ -14,17 +14,40 @@ This is the Nextflow port of the shell pipeline in
 
 ```
 samples.csv
-   └─ TRIM (fastp dedup+merge+cuttail → bbduk)
-        └─ FILTER (bbduk/bowtie2/bwa/minimap2 vs phiX + contam/vector DBs)
-             └─ ASSEMBLE (SPAdes; --careful --cov-cutoff auto; merged reads incl.)
-                  └─ VECSCREEN (AAFTF vecscreen; optional, on by default)
-                       └─ FCS_GX (NCBI FCS-GX purge; OPTIONAL, off by default)
-                            └─ RMDUP
-                                 └─ POLISH (POLCA; maps filtered reads back)
-                                      └─ SORT (by length, rename headers)
-                                           └─ ASSESS (assembly stats)  [always]
-                                           └─ DEPTH (read depth; optional, on by default)
+ │
+ ├─ TRIM ───────────  pass 1: fastp (default: dedup+merge+cuttail) │ trimmomatic
+ │    └─ pass 2: bbduk (fixed second adaptor/quality pass)
+ │
+ ├─ FILTER ──────────  bbduk (default) │ bowtie2 │ bwa │ minimap2
+ │                     vs phiX + contam/vector DBs
+ │
+ ├─ ASSEMBLE ────────  spades (default) │ megahit │ unicycler │ dipspades
+ │
+ ├─ VECSCREEN ───────  AAFTF vecscreen  (optional, ON by default)
+ │
+ ├─ FCS_GX ──────────  NCBI FCS-GX purge (OPTIONAL, OFF by default)
+ │
+ ├─ RMDUP ───────────  remove duplicate contigs
+ │
+ ├─ POLISH ──────────  polca (default) │ pilon │ racon │ nextpolish
+ │
+ ├─ SORT ────────────  by length, drop < min_contig_len, rename headers
+ │
+ ├─ ASSESS ──────────  assembly stats  (always)
+ │
+ └─ DEPTH ───────────  read depth back-mapping (optional, ON by default)
 ```
+
+**Stage tool choices** — each maps to an AAFTF `--method` flag:
+
+| Stage | Param | Options (bold = default) | Notes |
+|-------|-------|--------------------------|-------|
+| TRIM | `trim_method1` | **fastp** \| trimmomatic | Primary QC + adaptor trim; fastp adds dedup+merge |
+| TRIM | `trim_method2` | **bbduk** | Second adaptor pass (fixed; uses interleave workaround) |
+| FILTER | `filter_aligner` | **bbduk** \| bowtie2 \| bwa \| minimap2 | Read filter aligner vs phiX + contam/vector DBs |
+| ASSEMBLE | `assembler` | **spades** \| megahit \| unicycler \| dipspades | Only spades ships in the current image |
+| ASSEMBLE | `assembler_args` | (string, default null) | Extra CLI args passed to the assembler |
+| POLISH | `polisher` | **polca** \| pilon \| racon \| nextpolish | POLCA uses original filtered reads |
 
 Outputs land under `results/<step>/` (publishDir), one file set per sample.
 
@@ -37,7 +60,7 @@ The pipeline is container-only. Set a single engine flag:
 | `singularity` (default) | cached SIF `AAFTF.sif` (from `ghcr.io/stajichlab/aaftf:latest`) |
 | `docker`                 | `docker://ghcr.io/stajichlab/aaftf:latest` |
 
-The AAFTF image bakes `AAFTF_DB=/opt/aaaftf_db` and its toolchain
+The AAFTF image bakes `AAFTF_DB=/opt/aaftf_db` and its toolchain
 (`spades.py`, `bbduk.sh`, `fastp`, `pilon`, `polca.sh`, `minimap2`, `bwa`,
 `bowtie2`, `taxonkit`, `sourmash` ...). The pipeline binds the host reference
 DB and the NCBI taxdump into that path automatically via
@@ -75,19 +98,55 @@ Fungi) and feeds the optional FCS-GX step; falls back to `params.fcs_taxid`.
 
 ## Configuration
 
-Everything tunable lives in `conf/profile_aaftf.config`:
+Everything tunable lives in `conf/profile_aaftf.config`. The key knobs are the
+**per-stage tool choices**, each of which maps to an AAFTF `--method` flag:
 
-- `assembler` — `spades` (default). Note: **only SPAdes ships in the AAFTF
-  image**; `unicycler` / `megahit` are NOT installed, so this framework is
-  short-read/SPAdes focused. Unicycler is a good future option for quick
-  hybrid/short-read assemblies, but requires adding it to the container.
-- `polisher` — `polca` (default), or `pilon` / `racon` / `nextpolish`.
-- `skip_fcsgx` — FCS-GX is **off by default** (big DB download + highmem).
-- `skip_vecscreen` — vector screen on by default.
-- `run_depth` — depth on by default.
-- `dedup`, `minlen`, `PHRED`, `filter_aligner` — trim/filter knobs.
-- Partitions: `epyc` (default), `short` for trim/filter/lite steps, `highmem`
-  for FCS_GX / SPAdes retry escalation.
+### Stage tool choices
+
+| Param | Options (bold = default) | What it controls |
+|-------|--------------------------|------------------|
+| `trim_method1` | **fastp** \| trimmomatic | Primary QC/adaptor trim pass |
+| `trim_method2` | **bbduk** | Second adaptor/quality pass (fixed) |
+| `filter_aligner` | **bbduk** \| bowtie2 \| bwa \| minimap2 | Read filter aligner |
+| `assembler` | **spades** \| megahit \| unicycler \| dipspades | Assembly method |
+| `assembler_args` | string (default null) | Extra CLI args for the assembler |
+| `polisher` | **polca** \| pilon \| racon \| nextpolish | Polishing tool |
+
+### Trimming parameters
+
+When `trim_method1 = 'fastp'` (default): dedup + merge + 3' quality cut
+(`--dedup --merge --cuttail`). When `trim_method1 = 'trimmomatic'`: uses the
+`trimmomatic_*` knobs (adaptors, clip, leading/trailing/sliding window, quality).
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `dedup` | true | fastp read deduplication |
+| `minlen` | 75 | Minimum read length after trimming |
+| `PHRED` | 20 | fastp 3' quality cutoff (cuttail) |
+| `trim_memory` | 8 | GB for bbduk -Xmx (trim pass) |
+| `trimmomatic_adaptors` | TruSeq3-PE.fa | Trimmomatic adaptor file |
+| `trimmomatic_clip` | 2:30:10 | ILLUMINACLIP settings |
+| `trimmomatic_leadingwindow` | 3 | LEADING quality threshold |
+| `trimmomatic_trailingwindow` | 3 | TRAILING quality threshold |
+| `trimmomatic_slidingwindow` | 4:15 | SLIDINGWINDOW:windowSize:requiredQuality |
+| `trimmomatic_quality` | 15 | AVGQUAL threshold |
+
+### Pipeline control flags
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `skip_fcsgx` | true | FCS-GX purge (big DB download + highmem) |
+| `skip_vecscreen` | false | VecScreen on assembled contigs |
+| `run_depth` | true | Read depth back-mapping |
+| `fcs_taxid` | 4751 | Fallback NCBI taxonomy id for FCS-GX (4751 = Fungi) |
+
+### Assembly / polishing / finish
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `spades_memory` | 64 | GB for SPAdes |
+| `polisher_iterations` | 1 | AAFTF polish --iterations (polca ignores) |
+| `min_contig_len` | 2000 | AAFTF sort/rmdup min contig length |
 
 Boolean CLI flags are coerced (`--skip_fcsgx false` works — a string `"false"`
 would otherwise be truthy in Groovy).
@@ -129,9 +188,13 @@ before running `AAFTF fcs_gx_purge`. This step needs a current gxdb path
 (`params.fcsgx_db`) and high memory; it is deliberately off by default.
 
 ### Alternative assemblers
-- `unicycler` is not in the current container; adding it + `megahit` would make
-  the `params.assembler` switch real. Framework is intentionally short-read
-  / SPAdes focused.
+- `assembler` is wired through to `AAFTF assemble --method`. Supported values:
+  `spades` (default), `megahit`, `unicycler`, `dipspades`.
+- **Only SPAdes ships in the current AAFTF image.** Megahit and unicycler require
+  adding them to the container (or a future image build). The pipeline framework
+  is ready; the tool availability is the only gap.
+- Extra assembler-specific args can be passed via `assembler_args` (e.g.
+  `--assembler_args '--kmer 21,33,55'` for spades/megahit).
 
 ## Layout
 
