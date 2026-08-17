@@ -23,9 +23,13 @@ samples.csv
  │
  ├─ ASSEMBLE ────────  spades (default) │ megahit │ unicycler │ dipspades
  │
- ├─ VECSCREEN ───────  AAFTF vecscreen  (optional, ON by default)
+ ├─ VECSCREEN ───────  vector/primer screening (optional, ON by default)
+ │    ├─ vecscreen (default) — BLASTN vs UniVec + contaminant DBs
+ │    └─ fcs_screen            — NCBI FCS adaptor screening
  │
- ├─ FCS_GX ──────────  NCBI FCS-GX purge (OPTIONAL, OFF by default)
+ ├─ FCS_GX ──────────  contamination screening (optional, OFF by default)
+ │    ├─ fcs_gx (default)     — NCBI FCS-GX taxonomy-based purge
+ │    └─ sourpurge (optional) — sourmash k-mer LCA purge
  │
  ├─ RMDUP ───────────  remove duplicate contigs
  │
@@ -47,6 +51,9 @@ samples.csv
 | FILTER | `filter_aligner` | **bbduk** \| bowtie2 \| bwa \| minimap2 | Read filter aligner vs phiX + contam/vector DBs |
 | ASSEMBLE | `assembler` | **spades** \| megahit \| unicycler \| dipspades | Only spades ships in the current image |
 | ASSEMBLE | `assembler_args` | (string, default null) | Extra CLI args passed to the assembler |
+| VECSCREEN | `vector_screen_method` | **vecscreen** \| fcs_screen | Vector/primer screening method |
+| FCS_GX | `skip_fcsgx` | **true** \| false | NCBI FCS-GX contamination purge |
+| FCS_GX | `skip_sourpurge` | **true** \| false | Sourmash-based contamination purge |
 | POLISH | `polisher` | **polca** \| pilon \| racon \| nextpolish | POLCA uses original filtered reads |
 
 Outputs land under `results/<step>/` (publishDir), one file set per sample.
@@ -136,9 +143,31 @@ When `trim_method1 = 'fastp'` (default): dedup + merge + 3' quality cut
 | Param | Default | Description |
 |-------|---------|-------------|
 | `skip_fcsgx` | true | FCS-GX purge (big DB download + highmem) |
-| `skip_vecscreen` | false | VecScreen on assembled contigs |
+| `skip_sourpurge` | true | Sourmash-based contamination purge |
+| `skip_vecscreen` | false | Vector/primer screening on assembled contigs |
 | `run_depth` | true | Read depth back-mapping |
 | `fcs_taxid` | 4751 | Fallback NCBI taxonomy id for FCS-GX (4751 = Fungi) |
+
+### Screening stages
+
+Two complementary screening categories run after assembly:
+
+**1. Vector / primer screening** (`skip_vecscreen` to disable):
+
+| Param | Options (bold = default) | Description |
+|-------|--------------------------|-------------|
+| `vector_screen_method` | **vecscreen** \| fcs_screen | `vecscreen` = BLASTN vs UniVec + contaminant DBs; `fcs_screen` = NCBI FCS adaptor screening |
+| `fcs_screen_prok` | **false** \| true | fcs_screen mode: `--euk` (default) or `--prok` |
+
+**2. Contamination screening** (enable with `skip_fcsgx` / `skip_sourpurge`):
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `skip_fcsgx` | **true** | NCBI FCS-GX taxonomy-based purge. Resolves phylum taxid from sample's organism taxid via `taxonkit` |
+| `skip_sourpurge` | **true** | Sourmash k-mer LCA purge. Resolves phylum name from taxid and purges contigs not matching expected taxonomy |
+
+Both contamination screens can run simultaneously (FCS-GX first, then sourpurge).
+FCS-GX needs a current gxdb path (`params.fcsgx_db`) and high memory.
 
 ### Assembly / polishing / finish
 
@@ -180,12 +209,27 @@ would otherwise be truthy in Groovy).
   the sample name; `assess` reports N50 etc.; `depth` maps reads back with
   minimap2 and flags possible contaminant/organellar contigs by depth.
 
-### FCS-GX (optional)
-When enabled, `FCS_GX` resolves the **phylum** taxid at runtime from the
-sample's organism taxid via `taxonkit` (mirroring the BFD reference
-`GENOME_CLEAN` module) and stages the FCS-GX database into node-local scratch
-before running `AAFTF fcs_gx_purge`. This step needs a current gxdb path
-(`params.fcsgx_db`) and high memory; it is deliberately off by default.
+### Screening tools
+
+AAFTF provides four screening subcommands in two complementary categories:
+
+**Vector / primer screening** (run one):
+- `vecscreen` — BLASTN against UniVec + contaminant DBs (default)
+- `fcs_screen` — NCBI FCS adaptor screening (alternative)
+
+Select with `vector_screen_method`. Disable entirely with `skip_vecscreen=true`.
+
+**Contamination screening** (run either, both, or neither):
+- `fcs_gx_purge` — NCBI FCS-GX taxonomy-based purge. Resolves the phylum taxid
+  at runtime from the sample's organism taxid via `taxonkit`, then stages the
+  FCS-GX database into node-local scratch before purging. Needs a current gxdb
+  path (`params.fcsgx_db`) and high memory; off by default.
+- `sourpurge` — sourmash k-mer LCA purge. Resolves the phylum name from the
+  organism taxid and purges contigs whose taxonomy doesn't match the expected
+  phylum. Uses the sourmash LCA database in `AAFTF_DB`; off by default.
+
+Enable with `skip_fcsgx=false` and/or `skip_sourpurge=false`. Both can run in
+sequence (FCS-GX → sourpurge).
 
 ### Alternative assemblers
 - `assembler` is wired through to `AAFTF assemble --method`. Supported values:

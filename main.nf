@@ -5,8 +5,12 @@ nextflow.enable.dsl = 2
 /*
  * nf_aaftf — AAFTF genome assembly + cleanup for short-read (Illumina) genomes.
  *
- * Flow:  TRIM -> FILTER -> ASSEMBLE (SPAdes) -> VECSCREEN -> [optional FCS_GX]
+ * Flow:  TRIM -> FILTER -> ASSEMBLE -> [vector_screen] -> [contamination_screen]
  *        -> RMDUP -> POLISH -> SORT -> ASSESS -> [optional DEPTH]
+ *
+ * Screening stages (both optional, both complementary):
+ *   vector_screen:       vecscreen (BLASTN, default) OR fcs_screen (NCBI FCS adaptor)
+ *   contamination_screen: fcs_gx (NCBI FCS-GX purge) AND/OR sourpurge (sourmash purge)
  *
  * All processes run inside the AAFTF container (singularity SIF or Docker image,
  * selected via params.container_engine). Focus: short-read assembly with SPAdes
@@ -24,7 +28,9 @@ include { AFFTF_TRIM } from './modules/aaftf/TRIM'
 include { FILTER     } from './modules/aaftf/FILTER'
 include { ASSEMBLE   } from './modules/aaftf/ASSEMBLE'
 include { VECSCREEN  } from './modules/aaftf/VECSCREEN'
+include { FCS_SCREEN } from './modules/aaftf/FCS_SCREEN'
 include { FCS_GX     } from './modules/aaftf/FCS_GX'
+include { SOURPURGE  } from './modules/aaftf/SOURPURGE'
 include { RMDUP      } from './modules/aaftf/RMDUP'
 include { POLISH     } from './modules/aaftf/POLISH'
 include { SORT       } from './modules/aaftf/SORT'
@@ -39,11 +45,13 @@ workflow {
     // false` would otherwise be truthy in Groovy. Coerce explicitly here.
     def skip_vecscreen = (params.getOrDefault('skip_vecscreen', false) as String).toBoolean()
     def skip_fcsgx     = (params.getOrDefault('skip_fcsgx', true)     as String).toBoolean()
+    def skip_sourpurge = (params.getOrDefault('skip_sourpurge', true) as String).toBoolean()
     def run_depth      = (params.getOrDefault('run_depth', true)      as String).toBoolean()
+    def vec_method     = params.getOrDefault('vector_screen_method', 'vecscreen')
 
     // Sample sheet: sample,read_1,read_2 [,taxid]. The optional taxid column
-    // feeds the optional FCS-GX step (NCBI taxonomy id, e.g. 4751 Fungi /
-    // 4890 Ascomycota); falls back to params.fcs_taxid when absent.
+    // feeds the optional FCS-GX / sourpurge steps (NCBI taxonomy id, e.g.
+    // 4751 Fungi / 4890 Ascomycota); falls back to params.fcs_taxid when absent.
     Channel
         .fromPath(params.samples, checkIfExists: true)
         .splitCsv(header: true, sep: ',')
@@ -67,23 +75,30 @@ workflow {
     // ── Stage 3: assembly (SPAdes) ──────────────────────────────────
     ASSEMBLE(FILTER.out.filtered)
 
-    // ── Stage 4: vector screen (optional) ───────────────────────────
+    // ── Stage 4: vector / primer screening ──────────────────────────
+    //   vecscreen (BLASTN, default) OR fcs_screen (NCBI FCS adaptor)
+    def ch_vec
     if (skip_vecscreen) {
-        ch_asm = ASSEMBLE.out.assembly
+        ch_vec = ASSEMBLE.out.assembly
+    } else if (vec_method == 'fcs_screen') {
+        FCS_SCREEN(ASSEMBLE.out.assembly)
+        ch_vec = FCS_SCREEN.out.screened
     } else {
         VECSCREEN(ASSEMBLE.out.assembly)
-        ch_asm = VECSCREEN.out.vecscreen
+        ch_vec = VECSCREEN.out.vecscreen
     }
 
-    // ── Stage 4b: FCS-GX contamination purge (optional) ─────────────
-    // Pass the per-sample NCBI taxid (samples.csv `taxid` col) to FCS_GX; it
-    // resolves the phylum taxid internally via taxonkit. No taxid col -> param
-    // default (params.fcs_taxid) which the samples parse already applied.
-    if (skip_fcsgx) {
-        ch_purged = ch_asm
-    } else {
-        FCS_GX(ch_asm.join(samples_ch.map { s, r1, r2, t -> tuple(s, t) }))
+    // ── Stage 4b: contamination screening ───────────────────────────
+    //   fcs_gx (NCBI FCS-GX purge) AND/OR sourpurge (sourmash purge)
+    // Both can run; fcs_gx first then sourpurge, or either alone.
+    def ch_purged = ch_vec
+    if (!skip_fcsgx) {
+        FCS_GX(ch_vec.join(samples_ch.map { s, r1, r2, t -> tuple(s, t) }))
         ch_purged = FCS_GX.out.clean
+    }
+    if (!skip_sourpurge) {
+        SOURPURGE(ch_purged.join(samples_ch.map { s, r1, r2, t -> tuple(s, t) }))
+        ch_purged = SOURPURGE.out.clean
     }
 
     // ── Stage 5: finishing ──────────────────────────────────────────
