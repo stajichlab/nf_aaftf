@@ -29,7 +29,7 @@ include { FILTER     } from './modules/aaftf/FILTER'
 include { ASSEMBLE   } from './modules/aaftf/ASSEMBLE'
 include { VECSCREEN  } from './modules/aaftf/VECSCREEN'
 include { FCS_SCREEN } from './modules/aaftf/FCS_SCREEN'
-include { FCS_GX     } from './modules/aaftf/FCS_GX'
+include { CONTAM_CLEAN } from './modules/aaftf/CONTAM_CLEAN'
 include { SOURPURGE  } from './modules/aaftf/SOURPURGE'
 include { RMDUP      } from './modules/aaftf/RMDUP'
 include { POLISH     } from './modules/aaftf/POLISH'
@@ -93,8 +93,8 @@ workflow {
     // Both can run; fcs_gx first then sourpurge, or either alone.
     def ch_purged = ch_vec
     if (!skip_fcsgx) {
-        FCS_GX(ch_vec.join(samples_ch.map { s, r1, r2, t -> tuple(s, t) }))
-        ch_purged = FCS_GX.out.clean
+        CONTAM_CLEAN(ch_vec.join(samples_ch.map { s, r1, r2, t -> tuple(s, t) }))
+        ch_purged = CONTAM_CLEAN.out.clean
     }
     if (!skip_sourpurge) {
         SOURPURGE(ch_purged.join(samples_ch.map { s, r1, r2, t -> tuple(s, t) }))

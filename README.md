@@ -24,10 +24,10 @@ samples.csv
  ├─ ASSEMBLE ────────  spades (default) │ megahit │ unicycler │ dipspades
  │
  ├─ VECSCREEN ───────  vector/primer screening (optional, ON by default)
- │    ├─ vecscreen (default) — BLASTN vs UniVec + contaminant DBs
- │    └─ fcs_screen            — NCBI FCS adaptor screening
+ │    ├─ fcs_screen (default) — NCBI FCS adaptor screening
+ │    └─ vecscreen            — BLASTN vs UniVec + contaminant DBs
  │
- ├─ FCS_GX ──────────  contamination screening (optional, OFF by default)
+ ├─ CONTAM_CLEAN ────  contamination screening (optional, OFF by default)
  │    ├─ fcs_gx (default)     — NCBI FCS-GX taxonomy-based purge
  │    └─ sourpurge (optional) — sourmash k-mer LCA purge
  │
@@ -51,9 +51,9 @@ samples.csv
 | FILTER | `filter_aligner` | **bbduk** \| bowtie2 \| bwa \| minimap2 | Read filter aligner vs phiX + contam/vector DBs |
 | ASSEMBLE | `assembler` | **spades** \| megahit \| unicycler \| dipspades | Only spades ships in the current image |
 | ASSEMBLE | `assembler_args` | (string, default null) | Extra CLI args passed to the assembler |
-| VECSCREEN | `vector_screen_method` | **vecscreen** \| fcs_screen | Vector/primer screening method |
-| FCS_GX | `skip_fcsgx` | **true** \| false | NCBI FCS-GX contamination purge |
-| FCS_GX | `skip_sourpurge` | **true** \| false | Sourmash-based contamination purge |
+| VECSCREEN | `vector_screen_method` | **fcs_screen** \| vecscreen | Vector/primer screening method |
+| CONTAM_CLEAN | `skip_fcsgx` | **true** \| false | NCBI FCS-GX contamination purge |
+| CONTAM_CLEAN | `skip_sourpurge` | **true** \| false | Sourmash-based contamination purge |
 | POLISH | `polisher` | **polca** \| pilon \| racon \| nextpolish | POLCA uses original filtered reads |
 
 Outputs land under `results/<step>/` (publishDir), one file set per sample.
@@ -156,10 +156,10 @@ Two complementary screening categories run after assembly:
 
 | Param | Options (bold = default) | Description |
 |-------|--------------------------|-------------|
-| `vector_screen_method` | **vecscreen** \| fcs_screen | `vecscreen` = BLASTN vs UniVec + contaminant DBs; `fcs_screen` = NCBI FCS adaptor screening |
+| `vector_screen_method` | **fcs_screen** \| vecscreen | `fcs_screen` = NCBI FCS adaptor screening; `vecscreen` = BLASTN vs UniVec + contaminant DBs |
 | `fcs_screen_prok` | **false** \| true | fcs_screen mode: `--euk` (default) or `--prok` |
 
-**2. Contamination screening** (enable with `skip_fcsgx` / `skip_sourpurge`):
+**2. Contamination screening — CONTAM_CLEAN stage** (enable with `skip_fcsgx` / `skip_sourpurge`):
 
 | Param | Default | Description |
 |-------|---------|-------------|
@@ -214,8 +214,8 @@ would otherwise be truthy in Groovy).
 AAFTF provides four screening subcommands in two complementary categories:
 
 **Vector / primer screening** (run one):
-- `vecscreen` — BLASTN against UniVec + contaminant DBs (default)
-- `fcs_screen` — NCBI FCS adaptor screening (alternative)
+- `fcs_screen` — NCBI FCS adaptor screening (default)
+- `vecscreen` — BLASTN against UniVec + contaminant DBs (alternative)
 
 Select with `vector_screen_method`. Disable entirely with `skip_vecscreen=true`.
 
@@ -268,6 +268,6 @@ partition time limits (2h cap on `short`), the BBMap `PairStreamer` bug
 - Head process must run on a compute node → use `run_aaftf.sh` (never the login
   node for real runs).
 - Partitions: `epyc` (default), `short` (trim/filter/lite), `highmem`
-  (FCS_GX / SPAdes escalation). Verify with `sinfo`.
+  (CONTAM_CLEAN / SPAdes escalation). Verify with `sinfo`.
 - AAFTF image + reference DBs are lab-shared under
   `/bigdata/stajichlab/shared/{singularity_cache,lib}`.
