@@ -14,7 +14,7 @@ process VECSCREEN {
     # BLASTN screen of contigs against UniVec + contaminant DBs (vecscreen mode).
     # Note: this runs fully inside the AAFTF container — no external FCS tool.
     AAFTF vecscreen -c ${task.cpus} \\
-        --AAFTF_DB /opt/aaaftf_db \\
+        --AAFTF_DB /opt/aaftf_db \\
         -i ${assembly} -o ${sample}.vecscreen.fasta
     """
 

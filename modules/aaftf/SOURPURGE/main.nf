@@ -28,7 +28,7 @@ process SOURPURGE {
     AAFTF sourpurge \\
         -i ${asm} -o ${sample}.sourpurge.fasta \\
         -p "\$PHYLUM" -c ${task.cpus} \\
-        --AAFTF_DB /opt/aaaftf_db
+        --AAFTF_DB /opt/aaftf_db
     """
 
     stub:

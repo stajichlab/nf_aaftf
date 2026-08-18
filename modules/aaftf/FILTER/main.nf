@@ -13,14 +13,14 @@ process FILTER {
     """
     # Paired-end reads: filter against phiX + common contaminant/vector DBs.
     AAFTF filter --aligner ${params.filter_aligner} \
-        -c ${task.cpus} -m 16 --AAFTF_DB /opt/aaaftf_db \
+        -c ${task.cpus} -m 16 --AAFTF_DB /opt/aaftf_db \
         --left ${reads1} --right ${reads2} \
         -o ${sample}
 
     # Merged (single-end) reads: same filter run as single-end so merged reads
     # survive too; AAFTF emits them as _filtered_U.
     AAFTF filter --aligner ${params.filter_aligner} \
-        -c ${task.cpus} -m 16 --AAFTF_DB /opt/aaaftf_db \
+        -c ${task.cpus} -m 16 --AAFTF_DB /opt/aaftf_db \
         --left ${merged} \
         -o ${sample}
     """
