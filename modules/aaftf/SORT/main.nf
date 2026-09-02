@@ -1,7 +1,8 @@
 process SORT {
     tag   { sample }
     label 'aaftf_lite'
-    publishDir "${params.outdir}/sort", mode: 'copy', pattern: '*.sorted.fasta'
+    // Final assembly is published bgzip-compressed by COMPRESS (see main.nf);
+    // this uncompressed copy stays in work/ only, for ASSESS/DEPTH to consume.
 
     input:
     tuple val(sample), path(asm)

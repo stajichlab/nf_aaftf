@@ -6,7 +6,10 @@ nextflow.enable.dsl = 2
  * nf_aaftf — AAFTF genome assembly + cleanup for short-read (Illumina) genomes.
  *
  * Flow:  TRIM -> FILTER -> ASSEMBLE -> [vector_screen] -> [contamination_screen]
- *        -> RMDUP -> POLISH -> SORT -> ASSESS -> [optional DEPTH]
+ *        -> RMDUP -> POLISH -> SORT -> {COMPRESS, ASSESS, [optional DEPTH]}
+ *
+ * The final assembly fasta is published bgzip-compressed (results/sort/*.sorted.fasta.gz)
+ * so it stays indexable via samtools/bcftools while saving disk space.
  *
  * Screening stages (both optional, both complementary):
  *   vector_screen:       vecscreen (BLASTN, default) OR fcs_screen (NCBI FCS adaptor)
@@ -24,7 +27,7 @@ params.outdir  = "${launchDir}/results"
 params.n_test  = 0
 
 // ── Include process modules ─────────────────────────────────────────────────
-include { AFFTF_TRIM } from './modules/aaftf/TRIM'
+include { AAFTF_TRIM } from './modules/aaftf/TRIM'
 include { FILTER     } from './modules/aaftf/FILTER'
 include { ASSEMBLE   } from './modules/aaftf/ASSEMBLE'
 include { VECSCREEN  } from './modules/aaftf/VECSCREEN'
@@ -34,6 +37,7 @@ include { SOURPURGE  } from './modules/aaftf/SOURPURGE'
 include { RMDUP      } from './modules/aaftf/RMDUP'
 include { POLISH     } from './modules/aaftf/POLISH'
 include { SORT       } from './modules/aaftf/SORT'
+include { COMPRESS   } from './modules/aaftf/COMPRESS'
 include { ASSESS     } from './modules/aaftf/ASSESS'
 include { DEPTH      } from './modules/aaftf/DEPTH'
 
@@ -67,10 +71,10 @@ workflow {
         .set { samples_ch }
 
     // ── Stage 1: QC trim (fastp dedup+merge+cuttail, then bbduk) ───
-    AFFTF_TRIM(samples_ch.map { s, r1, r2, t -> tuple(s, r1, r2) })
+    AAFTF_TRIM(samples_ch.map { s, r1, r2, t -> tuple(s, r1, r2) })
 
     // ── Stage 2: contaminant read filtering (phiX + vector DBs) ─────
-    FILTER(AFFTF_TRIM.out.trimmed)
+    FILTER(AAFTF_TRIM.out.trimmed)
 
     // ── Stage 3: assembly (SPAdes) ──────────────────────────────────
     ASSEMBLE(FILTER.out.filtered)
@@ -105,6 +109,7 @@ workflow {
     RMDUP(ch_purged)
     POLISH(RMDUP.out.rmdup.join(FILTER.out.filtered.map { s, f1, f2, fu -> tuple(s, f1, f2) }))
     SORT(POLISH.out.polished)
+    COMPRESS(SORT.out.sorted)
     ASSESS(SORT.out.sorted)
 
     if (run_depth) {

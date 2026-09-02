@@ -1,4 +1,4 @@
-process AFFTF_TRIM {
+process AAFTF_TRIM {
     tag   { sample }
     label 'aaftf_trim'
     publishDir "${params.outdir}/trim", mode: 'copy', pattern: '_1P.fastq.gz|_2P.fastq.gz|_MG.fastq.gz'
