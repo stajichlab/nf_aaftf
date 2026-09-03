@@ -33,6 +33,7 @@ include { ASSEMBLE   } from './modules/aaftf/ASSEMBLE'
 include { VECSCREEN  } from './modules/aaftf/VECSCREEN'
 include { FCS_SCREEN } from './modules/aaftf/FCS_SCREEN'
 include { CONTAM_CLEAN } from './modules/aaftf/CONTAM_CLEAN'
+include { CONTAM_CLEAN_BATCH } from './modules/aaftf/CONTAM_CLEAN_BATCH'
 include { SOURPURGE  } from './modules/aaftf/SOURPURGE'
 include { RMDUP      } from './modules/aaftf/RMDUP'
 include { POLISH     } from './modules/aaftf/POLISH'
@@ -97,8 +98,49 @@ workflow {
     // Both can run; fcs_gx first then sourpurge, or either alone.
     def ch_purged = ch_vec
     if (!skip_fcsgx) {
-        CONTAM_CLEAN(ch_vec.join(samples_ch.map { s, r1, r2, t -> tuple(s, t) }))
-        ch_purged = CONTAM_CLEAN.out.clean
+        // The FCS-GX database (~465 GB) is far too expensive to rsync-stage
+        // once per genome, so above contam_clean_batch_size=0 we batch
+        // genomes into single SLURM jobs that stage the DB once and clean
+        // every genome in the batch (~15-30 min staging + ~1-2 min/genome).
+        // Set contam_clean_batch_size = 0 to fall back to the original
+        // one-job-per-genome CONTAM_CLEAN process.
+        int contam_clean_batch_size = params.getOrDefault('contam_clean_batch_size', 100) as int
+        def items_ch = ch_vec.join(samples_ch.map { s, r1, r2, t -> tuple(s, t) })
+            .map { s, f, t -> tuple(s, f.name, t, f) }
+
+        if (contam_clean_batch_size > 0) {
+            // Skip samples a prior attempt already cleaned, so re-launching
+            // the pipeline never repays the DB-staging cost for them.
+            def items_to_clean = items_ch.filter { s, fname, t, f ->
+                !file("${params.outdir}/contam_clean/${s}.contam_clean.fasta").exists()
+            }
+            def batches = items_to_clean.collate(contam_clean_batch_size)
+                .map { batch ->
+                    tuple(batch.collect { s, fname, t, f -> [s, fname, t] },
+                          batch.collect { s, fname, t, f -> f })
+                }
+            CONTAM_CLEAN_BATCH(batches)
+            def clean_done_ch = CONTAM_CLEAN_BATCH.out.manifest.collect().ifEmpty([])
+
+            // The cleaned assembly always lands at the fixed path below
+            // (whether cleaned just now or in a prior attempt), so rebuild
+            // the per-sample channel from that convention rather than from
+            // CONTAM_CLEAN_BATCH's own (batch-shaped) output.
+            ch_purged = ch_vec
+                .map { s, f -> tuple(s, file("${params.outdir}/contam_clean/${s}.contam_clean.fasta")) }
+                .combine(clean_done_ch)
+                .map { it[0..1] }
+                .filter { s, f ->
+                    if (!f.exists()) {
+                        log.warn "CONTAM_CLEAN_BATCH: no cleaned assembly for ${s}; skipping downstream"
+                        return false
+                    }
+                    return true
+                }
+        } else {
+            CONTAM_CLEAN(items_ch.map { s, fname, t, f -> tuple(s, f, t) })
+            ch_purged = CONTAM_CLEAN.out.clean
+        }
     }
     if (!skip_sourpurge) {
         SOURPURGE(ch_purged.join(samples_ch.map { s, r1, r2, t -> tuple(s, t) }))
