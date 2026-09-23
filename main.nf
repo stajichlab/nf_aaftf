@@ -54,6 +54,27 @@ workflow {
     def run_depth      = (params.getOrDefault('run_depth', true)      as String).toBoolean()
     def vec_method     = params.getOrDefault('vector_screen_method', 'vecscreen')
 
+    // --reuse_asm V11,V20: take these samples' assemblies from
+    // ${outdir}/asm/<sample>.<assembler>.fasta instead of running ASSEMBLE.
+    // Use it when a finished assembly was marked failed (e.g. a job moved
+    // between partitions) and -resume would otherwise re-assemble it. Only
+    // the listed samples switch source, so other samples keep their
+    // downstream cache (the cache hash includes the input file path).
+    def reuse_param = params.getOrDefault('reuse_asm', '')
+    if (reuse_param instanceof Boolean || (reuse_param as String) == 'true') {
+        error("--reuse_asm needs a comma-separated sample list, e.g. --reuse_asm V11,V20")
+    }
+    def reuse_set = ((reuse_param ?: '') as String).tokenize(',')*.trim().findAll { it } as Set
+    reuse_set.each { s ->
+        def f = file("${params.outdir}/asm/${s}.${params.assembler}.fasta")
+        if (!f.exists()) {
+            error("--reuse_asm: no assembly for ${s} at ${f}")
+        }
+    }
+    if (reuse_set) {
+        log.info "Reusing existing assemblies (ASSEMBLE skipped): ${reuse_set.sort().join(', ')}"
+    }
+
     // Sample sheet: sample,read_1,read_2 [,taxid]. The optional taxid column
     // feeds the optional FCS-GX / sourpurge steps (NCBI taxonomy id, e.g.
     // 4751 Fungi / 4890 Ascomycota); falls back to params.fcs_taxid when absent.
@@ -78,18 +99,27 @@ workflow {
     FILTER(AAFTF_TRIM.out.trimmed)
 
     // ── Stage 3: assembly (SPAdes) ──────────────────────────────────
-    ASSEMBLE(FILTER.out.filtered)
+    def ch_filt = FILTER.out.filtered.branch { s, f1, f2, fu ->
+        reuse:    s in reuse_set
+        assemble: true
+    }
+    ASSEMBLE(ch_filt.assemble)
+    def ch_asm = ASSEMBLE.out.assembly.mix(
+        ch_filt.reuse.map { s, f1, f2, fu ->
+            tuple(s, file("${params.outdir}/asm/${s}.${params.assembler}.fasta"))
+        }
+    )
 
     // ── Stage 4: vector / primer screening ──────────────────────────
     //   vecscreen (BLASTN, default) OR fcs_screen (NCBI FCS adaptor)
     def ch_vec
     if (skip_vecscreen) {
-        ch_vec = ASSEMBLE.out.assembly
+        ch_vec = ch_asm
     } else if (vec_method == 'fcs_screen') {
-        FCS_SCREEN(ASSEMBLE.out.assembly)
+        FCS_SCREEN(ch_asm)
         ch_vec = FCS_SCREEN.out.screened
     } else {
-        VECSCREEN(ASSEMBLE.out.assembly)
+        VECSCREEN(ch_asm)
         ch_vec = VECSCREEN.out.vecscreen
     }
 

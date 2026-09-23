@@ -146,6 +146,7 @@ When `trim_method1 = 'fastp'` (default): dedup + merge + 3' quality cut
 | `skip_sourpurge` | true | Sourmash-based contamination purge |
 | `skip_vecscreen` | false | Vector/primer screening on assembled contigs |
 | `run_depth` | true | Read depth back-mapping |
+| `reuse_asm` | '' | Comma-separated samples (e.g. `V11,V20`) whose assembly is taken from `<outdir>/asm/<sample>.<assembler>.fasta` instead of running ASSEMBLE. Use when a finished assembly was marked failed and `-resume` would re-assemble it. The run stops if a listed file is missing. |
 | `fcs_taxid` | 4751 | Fallback NCBI taxonomy id for FCS-GX (4751 = Fungi) |
 
 ### Screening stages
