@@ -51,6 +51,10 @@ BATCH_EOF
     STAGE="\${SCRATCH:?}/fcsgx_stage_batch_${task.index}"
     mkdir -p "\$STAGE"
     rsync -a --delete ${params.fcsgx_db}/ "\$STAGE/"
+    if [ ! -s "\$STAGE/all.gxi" ]; then
+        echo "[ERROR] FCS-GX DB staging failed: \$STAGE/all.gxi missing (is ${params.fcsgx_db} bound into the container?)" >&2
+        exit 1
+    fi
 
     i=0
     fcs_fails=0
