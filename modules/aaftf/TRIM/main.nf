@@ -1,7 +1,12 @@
 process AAFTF_TRIM {
     tag   { sample }
     label 'aaftf_trim'
-    publishDir "${params.outdir}/trim", mode: 'copy', pattern: '_1P.fastq.gz|_2P.fastq.gz|_MG.fastq.gz'
+    // Previous pattern ('_1P.fastq.gz|_2P.fastq.gz|_MG.fastq.gz') is not a
+    // valid Nextflow glob (no leading wildcard, '|' isn't glob alternation),
+    // so nothing was ever actually copied to outdir/trim -- confirmed empty
+    // 2026-09-26. publishDir with no pattern copies exactly the declared
+    // `output` paths, which is already just these three files.
+    publishDir "${params.outdir}/trim", mode: 'copy'
 
     input:
     tuple val(sample), path(reads1), path(reads2)

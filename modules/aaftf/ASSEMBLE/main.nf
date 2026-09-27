@@ -1,14 +1,14 @@
 process ASSEMBLE {
     tag   { sample }
     label 'aaftf'
-    publishDir "${params.outdir}/asm", mode: 'copy', pattern: "*.${params.assembler}.fasta"
+    publishDir "${params.outdir}/asm", mode: 'copy', pattern: "*.${params.assembler}.fasta.gz"
 
     input:
     tuple val(sample), path(filtered_1), path(filtered_2), path(filtered_U)
 
     output:
     tuple val(sample), path("${sample}.${params.assembler}.fasta"), emit: assembly
-    path "${sample}.${params.assembler}.fasta.gz", emit: assembly_gz, optional: true
+    path "${sample}.${params.assembler}.fasta.gz", emit: assembly_gz
 
     script:
     // Assembler switch: spades (default) | dipspades | megahit | unicycler.
@@ -23,6 +23,7 @@ process ASSEMBLE {
         --merged ${filtered_U} \
         -o ${sample}.${params.assembler}.fasta \
         -w spades_work_${sample} ${extra}
+    gzip -c ${sample}.${params.assembler}.fasta > ${sample}.${params.assembler}.fasta.gz
     """
 
     stub:
@@ -31,5 +32,6 @@ process ASSEMBLE {
 >${sample}_contig_1
 ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT
 FASTA
+    gzip -c ${sample}.${params.assembler}.fasta > ${sample}.${params.assembler}.fasta.gz
     """
 }

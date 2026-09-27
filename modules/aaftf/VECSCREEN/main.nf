@@ -1,13 +1,14 @@
 process VECSCREEN {
     tag   { sample }
     label 'aaftf_lite'
-    publishDir "${params.outdir}/vecscreen", mode: 'copy', pattern: '*.vecscreen.fasta'
+    publishDir "${params.outdir}/vecscreen", mode: 'copy', pattern: '*.vecscreen.fasta.gz'
 
     input:
     tuple val(sample), path(assembly)
 
     output:
     tuple val(sample), path("${sample}.vecscreen.fasta"), emit: vecscreen
+    path "${sample}.vecscreen.fasta.gz"
 
     script:
     """
@@ -16,10 +17,12 @@ process VECSCREEN {
     AAFTF vecscreen -c ${task.cpus} \\
         --AAFTF_DB /opt/aaftf_db \\
         -i ${assembly} -o ${sample}.vecscreen.fasta
+    gzip -c ${sample}.vecscreen.fasta > ${sample}.vecscreen.fasta.gz
     """
 
     stub:
     """
     cp ${assembly} ${sample}.vecscreen.fasta
+    gzip -c ${sample}.vecscreen.fasta > ${sample}.vecscreen.fasta.gz
     """
 }

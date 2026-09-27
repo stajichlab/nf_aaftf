@@ -1,13 +1,14 @@
 process POLISH {
     tag   { sample }
     label 'aaftf'
-    publishDir "${params.outdir}/polish", mode: 'copy', pattern: '*.polished.fasta'
+    publishDir "${params.outdir}/polish", mode: 'copy', pattern: '*.polished.fasta.gz'
 
     input:
     tuple val(sample), path(asm), path(filtered_1), path(filtered_2)
 
     output:
     tuple val(sample), path("${sample}.polished.fasta"), emit: polished
+    path "${sample}.polished.fasta.gz"
 
     script:
     """
@@ -19,10 +20,12 @@ process POLISH {
         -c ${task.cpus} -m ${params.spades_memory} \
         --left ${filtered_1} --right ${filtered_2} \
         -w polish_work_${sample}
+    gzip -c ${sample}.polished.fasta > ${sample}.polished.fasta.gz
     """
 
     stub:
     """
     cp ${asm} ${sample}.polished.fasta
+    gzip -c ${sample}.polished.fasta > ${sample}.polished.fasta.gz
     """
 }

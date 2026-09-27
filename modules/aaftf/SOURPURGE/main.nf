@@ -1,13 +1,14 @@
 process SOURPURGE {
     tag   { sample }
     label 'aaftf'
-    publishDir "${params.outdir}/sourpurge", mode: 'copy', pattern: '*.sourpurge.fasta'
+    publishDir "${params.outdir}/sourpurge", mode: 'copy', pattern: '*.sourpurge.fasta.gz'
 
     input:
     tuple val(sample), path(asm), val(taxonid)
 
     output:
     tuple val(sample), path("${sample}.sourpurge.fasta"), emit: clean
+    path "${sample}.sourpurge.fasta.gz"
 
     script:
     // Sourmash-based contamination purge — an alternative or complement to
@@ -29,10 +30,12 @@ process SOURPURGE {
         -i ${asm} -o ${sample}.sourpurge.fasta \\
         -p "\$PHYLUM" -c ${task.cpus} \\
         --AAFTF_DB /opt/aaftf_db
+    gzip -c ${sample}.sourpurge.fasta > ${sample}.sourpurge.fasta.gz
     """
 
     stub:
     """
     cp ${asm} ${sample}.sourpurge.fasta
+    gzip -c ${sample}.sourpurge.fasta > ${sample}.sourpurge.fasta.gz
     """
 }

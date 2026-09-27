@@ -1,7 +1,10 @@
 process FILTER {
     tag   { sample }
     label 'aaftf_trim'
-    publishDir "${params.outdir}/filter", mode: 'copy', pattern: '_filtered_1.fastq.gz|_filtered_2.fastq.gz|_filtered_U.fastq.gz'
+    // Previous pattern was not a valid Nextflow glob (see TRIM/main.nf), so
+    // nothing was ever actually copied to outdir/filter -- confirmed empty
+    // 2026-09-26. No pattern = copy exactly the declared `output` paths.
+    publishDir "${params.outdir}/filter", mode: 'copy'
 
     input:
     tuple val(sample), path(reads1), path(reads2), path(merged)

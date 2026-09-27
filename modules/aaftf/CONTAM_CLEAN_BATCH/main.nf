@@ -8,14 +8,15 @@
 // ~1-2 min once the DB is staged).
 //
 // Cleaned assemblies are written directly to a fixed location
-// (params.outdir/contam_clean/<sample>.contam_clean.fasta, matching what
-// CONTAM_CLEAN's own publishDir produces) instead of through Nextflow's
-// per-task output staging, and skipped here if already present. That means
-// a batch that fails partway, or a whole pipeline re-launch, does not repay
-// the DB-staging cost for genomes a prior attempt already cleaned — main.nf
-// filters those out before batching and re-derives the per-sample channel
-// from this fixed path afterwards. Mirrors GENOME_CLEAN_BATCH /
-// FUNANNOTATE_GENOME_PREP in nf_funannotate1.
+// (params.outdir/contam_clean/<sample>.contam_clean.fasta.gz, matching what
+// CONTAM_CLEAN's own publishDir produces, gzip-compressed to save space)
+// instead of through Nextflow's per-task output staging, and skipped here if
+// already present. That means a batch that fails partway, or a whole
+// pipeline re-launch, does not repay the DB-staging cost for genomes a prior
+// attempt already cleaned — main.nf filters those out before batching and
+// re-derives the per-sample channel from this fixed path afterwards (via a
+// GUNZIP step, since fcs_gx_purge itself needs a plain FASTA). Mirrors
+// GENOME_CLEAN_BATCH / FUNANNOTATE_GENOME_PREP in nf_funannotate1.
 process CONTAM_CLEAN_BATCH {
     tag { "batch_${task.index}" }
     label 'aaftf'
@@ -61,7 +62,7 @@ BATCH_EOF
     while IFS=\$'\\t' read -r sample fname taxonid; do
         [ -z "\$sample" ] && continue
         i=\$((i+1))
-        target=\$DEST/\${sample}.contam_clean.fasta
+        target=\$DEST/\${sample}.contam_clean.fasta.gz
         if [ -s "\$target" ]; then
             echo "[\$i/\$n_total][SKIP] \$sample already cleaned"
             printf '%s\\t%s\\n' "\$sample" "\$target" >> \$MANIFEST
@@ -82,15 +83,19 @@ BATCH_EOF
         fi
         echo "[\$i/\$n_total][INFO] \$sample taxonid=\$taxonid -> phylum_taxid=\$phylum"
 
+        cleaned_tmp="\$DEST/\${sample}.contam_clean.fasta.tmp"
         if AAFTF fcs_gx_purge --db "\$STAGE/all" \\
             -t "\$phylum" -c ${task.cpus} \\
-            -i "\$fname" -o "\${target}.tmp" \\
+            -i "\$fname" -o "\$cleaned_tmp" \\
             -w fcsgx_work_\${sample}; then
+            gzip -c "\$cleaned_tmp" > "\${target}.tmp"
             mv "\${target}.tmp" "\$target"
+            rm -f "\$cleaned_tmp"
             echo "[\$i/\$n_total][OK] \$sample -> \$target"
             printf '%s\\t%s\\n' "\$sample" "\$target" >> \$MANIFEST
         else
             echo "[\$i/\$n_total][FAIL] fcs_gx_purge failed for \$sample" >&2
+            rm -f "\$cleaned_tmp"
             fcs_fails=\$((fcs_fails+1))
         fi
     done < batch.tsv
@@ -116,8 +121,8 @@ ${batch_tsv}
 BATCH_EOF
     while IFS=\$'\\t' read -r sample fname taxonid; do
         [ -z "\$sample" ] && continue
-        cp "\$fname" \$DEST/\${sample}.contam_clean.fasta
-        printf '%s\\t%s\\n' "\$sample" "\$DEST/\${sample}.contam_clean.fasta" >> \$MANIFEST
+        gzip -c "\$fname" > \$DEST/\${sample}.contam_clean.fasta.gz
+        printf '%s\\t%s\\n' "\$sample" "\$DEST/\${sample}.contam_clean.fasta.gz" >> \$MANIFEST
     done < batch.tsv
     """
 }

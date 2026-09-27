@@ -1,13 +1,14 @@
 process CONTAM_CLEAN {
     tag   { sample }
     label 'aaftf'
-    publishDir "${params.outdir}/contam_clean", mode: 'copy', pattern: '*.contam_clean.fasta'
+    publishDir "${params.outdir}/contam_clean", mode: 'copy', pattern: '*.contam_clean.fasta.gz'
 
     input:
     tuple val(sample), path(asm), val(taxonid)
 
     output:
     tuple val(sample), path("${sample}.contam_clean.fasta"), emit: clean
+    path "${sample}.contam_clean.fasta.gz"
 
     script:
     """
@@ -46,10 +47,12 @@ process CONTAM_CLEAN {
         -i ${asm} -o ${sample}.contam_clean.fasta \\
         -w fcsgx_work_${sample}
     rm -rf "\$STAGE"
+    gzip -c ${sample}.contam_clean.fasta > ${sample}.contam_clean.fasta.gz
     """
 
     stub:
     """
     cp ${asm} ${sample}.contam_clean.fasta
+    gzip -c ${sample}.contam_clean.fasta > ${sample}.contam_clean.fasta.gz
     """
 }

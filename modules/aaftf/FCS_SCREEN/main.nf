@@ -1,7 +1,7 @@
 process FCS_SCREEN {
     tag   { sample }
     label 'aaftf_native'
-    publishDir "${params.outdir}/fcs_screen", mode: 'copy', pattern: '*.fcs_screen.fasta'
+    publishDir "${params.outdir}/fcs_screen", mode: 'copy', pattern: '*.fcs_screen.fasta.gz'
     publishDir "${params.outdir}/fcs_screen", mode: 'copy', pattern: '*.fcs_adaptor_report.txt'
 
     input:
@@ -9,6 +9,7 @@ process FCS_SCREEN {
 
     output:
     tuple val(sample), path("${sample}.fcs_screen.fasta"), emit: screened
+    path "${sample}.fcs_screen.fasta.gz"
     path "${sample}.fcs_adaptor_report.txt"
 
     script:
@@ -45,11 +46,13 @@ process FCS_SCREEN {
 
     cp "\$OUTDIR/cleaned_sequences/\$FASTA_NAME" ${sample}.fcs_screen.fasta
     cp "\$OUTDIR/fcs_adaptor_report.txt" ${sample}.fcs_adaptor_report.txt
+    gzip -c ${sample}.fcs_screen.fasta > ${sample}.fcs_screen.fasta.gz
     """
 
     stub:
     """
     cp ${assembly} ${sample}.fcs_screen.fasta
+    gzip -c ${sample}.fcs_screen.fasta > ${sample}.fcs_screen.fasta.gz
     touch ${sample}.fcs_adaptor_report.txt
     """
 }
