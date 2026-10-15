@@ -24,6 +24,11 @@ process ASSEMBLE {
         -o ${sample}.${params.assembler}.fasta \
         -w spades_work_${sample} ${extra}
     gzip -c ${sample}.${params.assembler}.fasta > ${sample}.${params.assembler}.fasta.gz
+    ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
+        'AAFTF=AAFTF --version' \\
+        'spades=spades.py --version' \\
+        'megahit=megahit --version' \\
+        "assembler=echo ${params.assembler}"
     """
 
     stub:

@@ -47,6 +47,8 @@ process FCS_SCREEN {
     cp "\$OUTDIR/cleaned_sequences/\$FASTA_NAME" ${sample}.fcs_screen.fasta
     cp "\$OUTDIR/fcs_adaptor_report.txt" ${sample}.fcs_adaptor_report.txt
     gzip -c ${sample}.fcs_screen.fasta > ${sample}.fcs_screen.fasta.gz
+    ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
+        "fcs_adaptor_sif=basename \$(readlink -f ${params.fcs_adaptor_sif})"
     """
 
     stub:

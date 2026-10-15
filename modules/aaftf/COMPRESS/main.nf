@@ -14,6 +14,8 @@ process COMPRESS {
     # bgzip (htslib), not plain gzip: keeps the final assembly block-compressed
     # and indexable (samtools faidx / bcftools) while remaining gzip-compatible.
     bgzip -c -@ ${task.cpus} ${asm} > ${sample}.sorted.fasta.gz
+    ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
+        'bgzip=bgzip --version | head -1'
     """
 
     stub:

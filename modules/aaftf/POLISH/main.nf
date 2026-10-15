@@ -21,6 +21,12 @@ process POLISH {
         --left ${filtered_1} --right ${filtered_2} \
         -w polish_work_${sample}
     gzip -c ${sample}.polished.fasta > ${sample}.polished.fasta.gz
+    ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
+        'AAFTF=AAFTF --version' \\
+        'pilon=pilon --version 2>&1 | head -1' \\
+        'bwa=bwa 2>&1 | grep -i '\\''^Version'\\''' \\
+        'samtools=samtools --version | head -1' \\
+        "polisher=echo ${params.polisher}"
     """
 
     stub:
