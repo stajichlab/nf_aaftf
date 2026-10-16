@@ -43,13 +43,13 @@ process CONTAM_CLEAN {
         exit 1
     fi
     AAFTF fcs_gx_purge --db "\$STAGE/all" \\
-        -t "\$phylum" -c ${task.cpus} \\
+        -t "\$phylum" \\
         -i ${asm} -o ${sample}.contam_clean.fasta \\
         -w fcsgx_work_${sample}
     rm -rf "\$STAGE"
     gzip -c ${sample}.contam_clean.fasta > ${sample}.contam_clean.fasta.gz
     ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
-        'AAFTF=AAFTF --version' \\
+        'AAFTF=AAFTF --version 2>&1 | grep -E '\\''^AAFTF [0-9]'\\'' | head -1' \\
         'fcs_gx=command -v gx >/dev/null && ls \$(dirname \$(command -v gx))/../conda-meta 2>/dev/null | grep ncbi-fcs-gx | head -1' \\
         'taxonkit=taxonkit version' \\
         "fcs_gx_db=readlink -f ${params.fcsgx_db}"

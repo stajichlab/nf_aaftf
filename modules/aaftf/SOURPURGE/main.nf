@@ -26,13 +26,16 @@ process SOURPURGE {
     fi
     echo "SOURPURGE: ${sample} taxonid=${taxonid} -> phylum='\$PHYLUM'"
 
-    AAFTF sourpurge \\
+    # AAFTF >= 0.7: `sourpurge` was split into `taxpurge` (sourmash taxonomy screen) and
+    # `covpurge` (bwa low-coverage screen, needs reads). This step is the taxonomy screen.
+    # Needs the sourmash databases in the AAFTF_DB folder (`AAFTF database taxpurge`).
+    export AAFTF_DB=/opt/aaftf_db
+    AAFTF taxpurge \\
         -i ${asm} -o ${sample}.sourpurge.fasta \\
-        -p "\$PHYLUM" -c ${task.cpus} \\
-        --AAFTF_DB /opt/aaftf_db
+        -p "\$PHYLUM" -c ${task.cpus}
     gzip -c ${sample}.sourpurge.fasta > ${sample}.sourpurge.fasta.gz
     ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
-        'AAFTF=AAFTF --version' \\
+        'AAFTF=AAFTF --version 2>&1 | grep -E '\\''^AAFTF [0-9]'\\'' | head -1' \\
         'sourmash=sourmash --version' \\
         'taxonkit=taxonkit version' \\
         "aaftf_db=readlink -f ${params.aaftf_db}"

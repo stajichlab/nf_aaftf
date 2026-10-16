@@ -99,6 +99,17 @@ workflow {
     def skip_fcsgx     = (params.getOrDefault('skip_fcsgx', true)     as String).toBoolean()
     def skip_sourpurge = (params.getOrDefault('skip_sourpurge', true) as String).toBoolean()
     def run_depth      = (params.getOrDefault('run_depth', true)      as String).toBoolean()
+
+    // AAFTF >= 0.7 removed these values; fail early with a clear message instead of
+    // an argparse error inside the container.
+    def ok_assemblers = ['spades', 'megahit', 'unicycler']
+    def ok_polishers  = ['polca', 'pypolca', 'polypolish', 'nextpolish2', 'racon']
+    if (!(params.assembler in ok_assemblers)) {
+        error "assembler='${params.assembler}' is not supported by AAFTF >= 0.7 (use one of ${ok_assemblers.join(', ')})"
+    }
+    if (!(params.polisher in ok_polishers)) {
+        error "polisher='${params.polisher}' is not supported by AAFTF >= 0.7 (use one of ${ok_polishers.join(', ')})"
+    }
     def vec_method     = params.getOrDefault('vector_screen_method', 'vecscreen')
 
     // --reuse_asm V11,V20: take these samples' assemblies from

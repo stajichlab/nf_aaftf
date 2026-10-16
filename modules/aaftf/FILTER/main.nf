@@ -14,20 +14,24 @@ process FILTER {
 
     script:
     """
+    export AAFTF_DB=/opt/aaftf_db   # AAFTF >= 0.7 reads the database folder from the AAFTF_DB environment variable (the --AAFTF_DB flag was removed)
     # Paired-end reads: filter against phiX + common contaminant/vector DBs.
     AAFTF filter --aligner ${params.filter_aligner} \
-        -c ${task.cpus} -m 16 --AAFTF_DB /opt/aaftf_db \
-        --left ${reads1} --right ${reads2} \
+        -c ${task.cpus} -m 16 \
+        -1 ${reads1} -2 ${reads2} \
         -o ${sample}
 
     # Merged (single-end) reads: same filter run as single-end so merged reads
-    # survive too; AAFTF emits them as _filtered_U.
+    # survive too. AAFTF >= 0.7 names single-end output <prefix>_filtered_1 (it used to
+    # be _filtered_U), which would overwrite the paired _filtered_1 above. Use a
+    # separate prefix, then rename to the _filtered_U the pipeline expects.
     AAFTF filter --aligner ${params.filter_aligner} \
-        -c ${task.cpus} -m 16 --AAFTF_DB /opt/aaftf_db \
-        --left ${merged} \
-        -o ${sample}
+        -c ${task.cpus} -m 16 \
+        -1 ${merged} \
+        -o ${sample}_SE
+    mv ${sample}_SE_filtered_1.fastq.gz ${sample}_filtered_U.fastq.gz
     ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
-        'AAFTF=AAFTF --version' \\
+        'AAFTF=AAFTF --version 2>&1 | grep -E '\\''^AAFTF [0-9]'\\'' | head -1' \\
         'bbduk=bbduk.sh --version 2>&1 | grep -i '\\''BBTools version'\\''' \\
         'bwa=bwa 2>&1 | grep -i '\\''^Version'\\''' \\
         'minimap2=minimap2 --version' \\

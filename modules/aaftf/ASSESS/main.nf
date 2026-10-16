@@ -14,7 +14,7 @@ process ASSESS {
     # Assembly statistics (N50, contig count, GC%, etc.) written to a report.
     AAFTF assess -i ${asm} -r ${sample}.stats.txt
     ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
-        'AAFTF=AAFTF --version'
+        'AAFTF=AAFTF --version 2>&1 | grep -E '\\''^AAFTF [0-9]'\\'' | head -1'
     """
 
     stub:

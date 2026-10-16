@@ -11,7 +11,7 @@ process ASSEMBLE {
     path "${sample}.${params.assembler}.fasta.gz", emit: assembly_gz
 
     script:
-    // Assembler switch: spades (default) | dipspades | megahit | unicycler.
+    // Assembler switch: spades (default) | megahit | unicycler. (AAFTF >= 0.7 dropped dipspades.)
     // AAFTF adds --careful + --cov-cutoff auto for spades; megahit/unicycler get
     // their own defaults. Extra args pass through via params.assembler_args.
     // `--merged` gets the filtered merged reads as the single-end input.
@@ -19,13 +19,13 @@ process ASSEMBLE {
     """
     AAFTF assemble --method ${params.assembler} \
         -c ${task.cpus} -m ${params.spades_memory} \
-        --left ${filtered_1} --right ${filtered_2} \
+        -1 ${filtered_1} -2 ${filtered_2} \
         --merged ${filtered_U} \
         -o ${sample}.${params.assembler}.fasta \
         -w spades_work_${sample} ${extra}
     gzip -c ${sample}.${params.assembler}.fasta > ${sample}.${params.assembler}.fasta.gz
     ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
-        'AAFTF=AAFTF --version' \\
+        'AAFTF=AAFTF --version 2>&1 | grep -E '\\''^AAFTF [0-9]'\\'' | head -1' \\
         'spades=spades.py --version' \\
         'megahit=megahit --version' \\
         "assembler=echo ${params.assembler}"

@@ -21,7 +21,7 @@ samples.csv
  ├─ FILTER ──────────  bbduk (default) │ bowtie2 │ bwa │ minimap2
  │                     vs phiX + contam/vector DBs
  │
- ├─ ASSEMBLE ────────  spades (default) │ megahit │ unicycler │ dipspades
+ ├─ ASSEMBLE ────────  spades (default) │ megahit │ unicycler
  │
  ├─ VECSCREEN ───────  vector/primer screening (optional, ON by default)
  │    ├─ fcs_screen (default) — NCBI FCS adaptor screening
@@ -29,11 +29,11 @@ samples.csv
  │
  ├─ CONTAM_CLEAN ────  contamination screening (optional, OFF by default)
  │    ├─ fcs_gx (default)     — NCBI FCS-GX taxonomy-based purge
- │    └─ sourpurge (optional) — sourmash k-mer LCA purge
+ │    └─ sourpurge (optional) — AAFTF taxpurge: sourmash taxonomy screen
  │
  ├─ RMDUP ───────────  remove duplicate contigs
  │
- ├─ POLISH ──────────  polca (default) │ pilon │ racon │ nextpolish
+ ├─ POLISH ──────────  polca (default) │ pypolca │ polypolish │ nextpolish2 │ racon
  │
  ├─ SORT ────────────  by length, drop < min_contig_len, rename headers
  │
@@ -49,12 +49,12 @@ samples.csv
 | TRIM | `trim_method1` | **fastp** \| trimmomatic | Primary QC + adaptor trim; fastp adds dedup+merge |
 | TRIM | `trim_method2` | **bbduk** | Second adaptor pass (fixed; uses interleave workaround) |
 | FILTER | `filter_aligner` | **bbduk** \| bowtie2 \| bwa \| minimap2 | Read filter aligner vs phiX + contam/vector DBs |
-| ASSEMBLE | `assembler` | **spades** \| megahit \| unicycler \| dipspades | Only spades ships in the current image |
+| ASSEMBLE | `assembler` | **spades** \| megahit \| unicycler | dipspades was removed in AAFTF 0.7 |
 | ASSEMBLE | `assembler_args` | (string, default null) | Extra CLI args passed to the assembler |
 | VECSCREEN | `vector_screen_method` | **fcs_screen** \| vecscreen | Vector/primer screening method |
 | CONTAM_CLEAN | `skip_fcsgx` | **true** \| false | NCBI FCS-GX contamination purge |
 | CONTAM_CLEAN | `skip_sourpurge` | **true** \| false | Sourmash-based contamination purge |
-| POLISH | `polisher` | **polca** \| pilon \| racon \| nextpolish | POLCA uses original filtered reads |
+| POLISH | `polisher` | **polca** \| pypolca \| polypolish \| nextpolish2 \| racon | POLCA uses original filtered reads |
 
 Outputs land under `results/<step>/` (publishDir), one file set per sample.
 
@@ -67,11 +67,13 @@ The pipeline is container-only. Set a single engine flag:
 | `singularity` (default) | cached SIF `AAFTF.sif` (from `ghcr.io/stajichlab/aaftf:latest`) |
 | `docker`                 | `docker://ghcr.io/stajichlab/aaftf:latest` |
 
-The AAFTF image bakes `AAFTF_DB=/opt/aaftf_db` and its toolchain
-(`spades.py`, `bbduk.sh`, `fastp`, `pilon`, `polca.sh`, `minimap2`, `bwa`,
-`bowtie2`, `taxonkit`, `sourmash` ...). The pipeline binds the host reference
-DB and the NCBI taxdump into that path automatically via
-`singularity.runOptions`.
+The AAFTF image carries its toolchain (`spades.py`, `megahit`, `bbduk.sh`, `fastp`, `minimap2`,
+`bwa`, `bowtie2`, `samtools`, `mosdepth`, `polypolish`, `pypolca`, `aaftf_polca.sh`, `sourmash` ...;
+run `AAFTF dependency` in the image for the full list). The pipeline binds the host reference
+DB (at `/opt/aaftf_db`) and the NCBI taxdump into the container via `singularity.runOptions`.
+**`taxonkit` is not in the AAFTF 0.7 development image** (`:main`, built from commit `1f51deb`).
+CONTAM_CLEAN, CONTAM_CLEAN_BATCH and SOURPURGE call `taxonkit` to resolve the phylum, so they need
+it supplied (see the AAFTF issue/PR, or a separate taxonkit container).
 
 > Note: `AAFTF --version` prints `0.0.0+unknown` for this dev (`latest`) build —
 > cosmetic only; all subcommands and tools work (verified).
@@ -115,9 +117,9 @@ Everything tunable lives in `conf/profile_aaftf.config`. The key knobs are the
 | `trim_method1` | **fastp** \| trimmomatic | Primary QC/adaptor trim pass |
 | `trim_method2` | **bbduk** | Second adaptor/quality pass (fixed) |
 | `filter_aligner` | **bbduk** \| bowtie2 \| bwa \| minimap2 | Read filter aligner |
-| `assembler` | **spades** \| megahit \| unicycler \| dipspades | Assembly method |
+| `assembler` | **spades** \| megahit \| unicycler | Assembly method |
 | `assembler_args` | string (default null) | Extra CLI args for the assembler |
-| `polisher` | **polca** \| pilon \| racon \| nextpolish | Polishing tool |
+| `polisher` | **polca** \| pypolca \| polypolish \| nextpolish2 \| racon | Polishing tool |
 
 ### Trimming parameters
 
@@ -225,19 +227,20 @@ Select with `vector_screen_method`. Disable entirely with `skip_vecscreen=true`.
   at runtime from the sample's organism taxid via `taxonkit`, then stages the
   FCS-GX database into node-local scratch before purging. Needs a current gxdb
   path (`params.fcsgx_db`) and high memory; off by default.
-- `sourpurge` — sourmash k-mer LCA purge. Resolves the phylum name from the
+- `sourpurge` — runs `AAFTF taxpurge` (AAFTF >= 0.7 split `sourpurge` into `taxpurge` and
+  `covpurge`; only the taxonomy screen is run here). Resolves the phylum name from the
   organism taxid and purges contigs whose taxonomy doesn't match the expected
-  phylum. Uses the sourmash LCA database in `AAFTF_DB`; off by default.
+  phylum. Needs the sourmash databases in `AAFTF_DB` (`AAFTF database taxpurge`, about
+  1 GB for the default `-lite` databases); off by default.
 
 Enable with `skip_fcsgx=false` and/or `skip_sourpurge=false`. Both can run in
 sequence (FCS-GX → sourpurge).
 
 ### Alternative assemblers
 - `assembler` is wired through to `AAFTF assemble --method`. Supported values:
-  `spades` (default), `megahit`, `unicycler`, `dipspades`.
-- **Only SPAdes ships in the current AAFTF image.** Megahit and unicycler require
-  adding them to the container (or a future image build). The pipeline framework
-  is ready; the tool availability is the only gap.
+  `spades` (default), `megahit`, `unicycler`. (`dipspades` was removed in AAFTF 0.7;
+  the pipeline stops with a clear message if it is requested.)
+- SPAdes, MEGAHIT and Unicycler ship in the AAFTF >= 0.7 image (`AAFTF dependency` lists them).
 - Extra assembler-specific args can be passed via `assembler_args` (e.g.
   `--assembler_args '--kmer 21,33,55'` for spades/megahit).
 
@@ -282,3 +285,21 @@ pipeline version/commit, host and time are included). Merge into one TSV per
 sample, and optionally one combined TSV:
 
     bin/merge_versions.py results/sample_versions --all results/tool_versions.tsv
+
+## AAFTF >= 0.7 command changes
+This pipeline targets the AAFTF 0.7 command line. Changes that affect the modules:
+
+- `-l/--left`, `-r/--right` are now `-1/--read1`, `-2/--read2` (`--merged` is unchanged).
+- `--AAFTF_DB` was removed. AAFTF reads the database folder from the `AAFTF_DB`
+  environment variable. The modules set `AAFTF_DB=/opt/aaftf_db`, the path the host
+  database folder is bound to.
+- Databases are downloaded only by `AAFTF database`. The host `AAFTF_DB` folder needs the
+  new file `mitochondrion.1.1.genomic.fna.gz` for `vecscreen` (`AAFTF database mitodb`);
+  the old `mito.nt.gz` is not used.
+- `filter` on single-end reads writes `<prefix>_filtered_1` (it wrote `_filtered_U`). FILTER
+  uses a separate prefix and renames the file.
+- `fcs_gx_purge` has no `-c/--cpus` option, and it now drops only contigs that FCS-GX
+  marks EXCLUDE (TRIM, FIX and REVIEW rows are kept with a warning).
+- `assemble --method` is required, SPAdes runs with `--careful --isolate` by default, and
+  `-m` is an integer number of GB.
+- `AAFTF --version` / `-V` prints the git-tag version (for example `0.7.0-beta.4-15+g1f51deb`).

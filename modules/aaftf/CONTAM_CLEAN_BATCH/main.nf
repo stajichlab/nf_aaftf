@@ -85,7 +85,7 @@ BATCH_EOF
 
         cleaned_tmp="\$DEST/\${sample}.contam_clean.fasta.tmp"
         if AAFTF fcs_gx_purge --db "\$STAGE/all" \\
-            -t "\$phylum" -c ${task.cpus} \\
+            -t "\$phylum" \\
             -i "\$fname" -o "\$cleaned_tmp" \\
             -w fcsgx_work_\${sample}; then
             gzip -c "\$cleaned_tmp" > "\${target}.tmp"
@@ -110,7 +110,7 @@ BATCH_EOF
     while IFS=\$'\\t' read -r s_id _ _; do
         [ -z "\$s_id" ] && continue
         ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/\${s_id}/versions" "${task.process}" "\$s_id" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
-            'AAFTF=AAFTF --version' \\
+            'AAFTF=AAFTF --version 2>&1 | grep -E '\\''^AAFTF [0-9]'\\'' | head -1' \\
             'fcs_gx=command -v gx >/dev/null && ls \$(dirname \$(command -v gx))/../conda-meta 2>/dev/null | grep ncbi-fcs-gx | head -1' \\
             'taxonkit=taxonkit version' \\
             "fcs_gx_db=readlink -f ${params.fcsgx_db}"
