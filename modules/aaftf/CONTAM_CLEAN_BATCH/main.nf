@@ -28,14 +28,13 @@ process CONTAM_CLEAN_BATCH {
     path "contam_clean_batch_${task.index}.manifest.tsv", emit: manifest
 
     script:
-    // items: List of [sample, filename, taxonid], built in main.nf. `filename`
+    // items: List of [sample, filename, phylum_taxid], built in main.nf. `filename`
     // is the basename Nextflow stages the matching entry of `assemblies`
     // under in this task's work dir, so there is no ordering ambiguity
     // between the metadata list and the staged files.
-    def batch_tsv = items.collect { s, fname, taxonid -> "${s}\t${fname}\t${taxonid}" }.join('\n')
+    def batch_tsv = items.collect { s, fname, phylum -> "${s}\t${fname}\t${phylum}" }.join('\n')
     """
     set -uo pipefail
-    TAXONKIT_DB=${params.taxondb}
     DEST=${params.outdir}/contam_clean
     mkdir -p \$DEST
 
@@ -59,7 +58,7 @@ BATCH_EOF
 
     i=0
     fcs_fails=0
-    while IFS=\$'\\t' read -r sample fname taxonid; do
+    while IFS=\$'\\t' read -r sample fname phylum; do
         [ -z "\$sample" ] && continue
         i=\$((i+1))
         target=\$DEST/\${sample}.contam_clean.fasta.gz
@@ -69,19 +68,12 @@ BATCH_EOF
             continue
         fi
 
-        phylum=\$(echo "\$taxonid" | taxonkit --data-dir \$TAXONKIT_DB lineage \\
-            | taxonkit --data-dir \$TAXONKIT_DB reformat -f "{p}" --output-ambiguous-result \\
-            | cut -f3 | taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
-        if [ -z "\$phylum" ]; then
-            echo "[\$i/\$n_total][WARN] could not resolve phylum for \$sample (taxonid=\$taxonid), falling back to params.fcs_taxid (${params.fcs_taxid})" >&2
-            phylum=${params.fcs_taxid}
-        fi
         if ! [[ "\$phylum" =~ ^[0-9]+\$ ]]; then
             echo "[\$i/\$n_total][FAIL] resolved phylum '\$phylum' is not numeric for \$sample" >&2
             fcs_fails=\$((fcs_fails+1))
             continue
         fi
-        echo "[\$i/\$n_total][INFO] \$sample taxonid=\$taxonid -> phylum_taxid=\$phylum"
+        echo "[\$i/\$n_total][INFO] \$sample phylum_taxid=\$phylum"
 
         cleaned_tmp="\$DEST/\${sample}.contam_clean.fasta.tmp"
         if AAFTF fcs_gx_purge --db "\$STAGE/all" \\
@@ -112,13 +104,12 @@ BATCH_EOF
         ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/\${s_id}/versions" "${task.process}" "\$s_id" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
             'AAFTF=AAFTF --version 2>&1 | grep -E '\\''^AAFTF [0-9]'\\'' | head -1' \\
             'fcs_gx=command -v gx >/dev/null && ls \$(dirname \$(command -v gx))/../conda-meta 2>/dev/null | grep ncbi-fcs-gx | head -1' \\
-            'taxonkit=taxonkit version' \\
             "fcs_gx_db=readlink -f ${params.fcsgx_db}"
     done < batch.tsv
     """
 
     stub:
-    def batch_tsv = items.collect { s, fname, taxonid -> "${s}\t${fname}\t${taxonid}" }.join('\n')
+    def batch_tsv = items.collect { s, fname, phylum -> "${s}\t${fname}\t${phylum}" }.join('\n')
     """
     DEST=${params.outdir}/contam_clean
     mkdir -p \$DEST
@@ -127,7 +118,7 @@ BATCH_EOF
     cat > batch.tsv <<'BATCH_EOF'
 ${batch_tsv}
 BATCH_EOF
-    while IFS=\$'\\t' read -r sample fname taxonid; do
+    while IFS=\$'\\t' read -r sample fname phylum; do
         [ -z "\$sample" ] && continue
         gzip -c "\$fname" > \$DEST/\${sample}.contam_clean.fasta.gz
         printf '%s\\t%s\\n' "\$sample" "\$DEST/\${sample}.contam_clean.fasta.gz" >> \$MANIFEST

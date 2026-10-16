@@ -71,9 +71,11 @@ The AAFTF image carries its toolchain (`spades.py`, `megahit`, `bbduk.sh`, `fast
 `bwa`, `bowtie2`, `samtools`, `mosdepth`, `polypolish`, `pypolca`, `aaftf_polca.sh`, `sourmash` ...;
 run `AAFTF dependency` in the image for the full list). The pipeline binds the host reference
 DB (at `/opt/aaftf_db`) and the NCBI taxdump into the container via `singularity.runOptions`.
-**`taxonkit` is not in the AAFTF 0.7 development image** (`:main`, built from commit `1f51deb`).
-CONTAM_CLEAN, CONTAM_CLEAN_BATCH and SOURPURGE call `taxonkit` to resolve the phylum, so they need
-it supplied (see the AAFTF issue/PR, or a separate taxonkit container).
+**`taxonkit` is not in the AAFTF 0.7 image** (removed in commit `1f51deb`). The `TAXON_PHYLUM`
+process runs it from its own container, `params.taxonkit_container` (default
+`docker://quay.io/biocontainers/taxonkit:0.20.0--h9ee0642_1`). It gives the phylum taxid to
+CONTAM_CLEAN and CONTAM_CLEAN_BATCH and the phylum name to SOURPURGE. It runs only when FCS-GX or
+sourpurge is enabled.
 
 > Note: `AAFTF --version` prints `0.0.0+unknown` for this dev (`latest`) build —
 > cosmetic only; all subcommands and tools work (verified).

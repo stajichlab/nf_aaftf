@@ -4,7 +4,7 @@ process CONTAM_CLEAN {
     publishDir "${params.outdir}/contam_clean", mode: 'copy', pattern: '*.contam_clean.fasta.gz'
 
     input:
-    tuple val(sample), path(asm), val(taxonid)
+    tuple val(sample), path(asm), val(phylum)
 
     output:
     tuple val(sample), path("${sample}.contam_clean.fasta"), emit: clean
@@ -12,27 +12,14 @@ process CONTAM_CLEAN {
 
     script:
     """
-    # Optional NCBI FCS-GX contamination purge. taxonid is the NCBI taxonomy id
-    # of the ORGANISM (e.g. 4890 for Ascomycota / 4751 for Fungi) taken from the
-    # samples.csv `taxid` column (or params.fcs_taxid fallback).
-    #
-    # FCS-GX -t expects a taxid at the PHYLUM level. Resolve it at runtime from
-    # the organism id with taxonkit so hardcoding drift is avoided (mirrors the
-    # reference BFD GENOME_CLEAN approach): lineage -> "{p}" phylum name ->
-    # name2taxid -> numeric phylum taxid.
-    TAXONKIT_DB=${params.taxondb}
-    phylum=\$(echo "${taxonid}" | taxonkit --data-dir \$TAXONKIT_DB lineage \\
-        | taxonkit --data-dir \$TAXONKIT_DB reformat -f "{p}" --output-ambiguous-result \\
-        | cut -f3 | taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
-    if [ -z "\$phylum" ]; then
-        echo "CONTAM_CLEAN: could not resolve phylum taxid from ${taxonid}, falling back to params.fcs_taxid (${params.fcs_taxid})" >&2
-        phylum=${params.fcs_taxid}
-    fi
-    if ! [[ "\$phylum" =~ ^[0-9]+\$ ]]; then
-        echo "CONTAM_CLEAN: ERROR: resolved phylum '\$phylum' is not numeric; cannot run fcs_gx_purge for ${sample}" >&2
+    # Optional NCBI FCS-GX contamination purge. `phylum` is the numeric PHYLUM
+    # taxid FCS-GX -t expects. TAXON_PHYLUM resolves it with taxonkit in its own
+    # container (AAFTF >= 0.7 no longer ships taxonkit).
+    if ! [[ "${phylum}" =~ ^[0-9]+\$ ]]; then
+        echo "CONTAM_CLEAN: ERROR: phylum '${phylum}' is not numeric; cannot run fcs_gx_purge for ${sample}" >&2
         exit 1
     fi
-    echo "CONTAM_CLEAN: ${sample} taxonid=${taxonid} -> phylum_taxid=\$phylum"
+    echo "CONTAM_CLEAN: ${sample} phylum_taxid=${phylum}"
 
     # The FCS-GX database is large; stage it to node-local scratch once per sample.
     STAGE="\${SCRATCH:?}/fcsgx_stage_\${sample}"
@@ -43,7 +30,7 @@ process CONTAM_CLEAN {
         exit 1
     fi
     AAFTF fcs_gx_purge --db "\$STAGE/all" \\
-        -t "\$phylum" \\
+        -t "${phylum}" \\
         -i ${asm} -o ${sample}.contam_clean.fasta \\
         -w fcsgx_work_${sample}
     rm -rf "\$STAGE"
@@ -51,7 +38,6 @@ process CONTAM_CLEAN {
     ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
         'AAFTF=AAFTF --version 2>&1 | grep -E '\\''^AAFTF [0-9]'\\'' | head -1' \\
         'fcs_gx=command -v gx >/dev/null && ls \$(dirname \$(command -v gx))/../conda-meta 2>/dev/null | grep ncbi-fcs-gx | head -1' \\
-        'taxonkit=taxonkit version' \\
         "fcs_gx_db=readlink -f ${params.fcsgx_db}"
     """
 

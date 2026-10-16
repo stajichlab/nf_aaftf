@@ -4,7 +4,7 @@ process SOURPURGE {
     publishDir "${params.outdir}/sourpurge", mode: 'copy', pattern: '*.sourpurge.fasta.gz'
 
     input:
-    tuple val(sample), path(asm), val(taxonid)
+    tuple val(sample), path(asm), val(phylum_name)
 
     output:
     tuple val(sample), path("${sample}.sourpurge.fasta"), emit: clean
@@ -14,17 +14,14 @@ process SOURPURGE {
     // Sourmash-based contamination purge — an alternative or complement to
     // FCS-GX. Compares contig k-mers against a sourmash LCA taxonomy DB and
     // purges contigs whose taxonomy doesn't match the expected phylum.
-    // Resolve phylum NAME from the organism taxid via taxonkit.
+    // The phylum NAME comes from TAXON_PHYLUM (taxonkit runs in its own container).
     """
-    TAXONKIT_DB=${params.taxondb}
-    PHYLUM=\$(echo "${taxonid}" | taxonkit --data-dir \$TAXONKIT_DB lineage \\
-        | taxonkit --data-dir \$TAXONKIT_DB reformat -f "{p}" --output-ambiguous-result \\
-        | cut -f3)
-    if [ -z "\$PHYLUM" ] || [ "\$PHYLUM" = "No rank" ]; then
-        echo "SOURPURGE: could not resolve phylum name from taxid ${taxonid}" >&2
+    PHYLUM="${phylum_name}"
+    if [ -z "\$PHYLUM" ]; then
+        echo "SOURPURGE: no phylum name resolved for ${sample}" >&2
         exit 1
     fi
-    echo "SOURPURGE: ${sample} taxonid=${taxonid} -> phylum='\$PHYLUM'"
+    echo "SOURPURGE: ${sample} phylum='\$PHYLUM'"
 
     # AAFTF >= 0.7: `sourpurge` was split into `taxpurge` (sourmash taxonomy screen) and
     # `covpurge` (bwa low-coverage screen, needs reads). This step is the taxonomy screen.
@@ -37,7 +34,6 @@ process SOURPURGE {
     ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
         'AAFTF=AAFTF --version 2>&1 | grep -E '\\''^AAFTF [0-9]'\\'' | head -1' \\
         'sourmash=sourmash --version' \\
-        'taxonkit=taxonkit version' \\
         "aaftf_db=readlink -f ${params.aaftf_db}"
     """
 
