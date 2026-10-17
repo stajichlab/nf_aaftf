@@ -35,6 +35,7 @@ include { FCS_SCREEN } from './modules/aaftf/FCS_SCREEN'
 include { CONTAM_CLEAN } from './modules/aaftf/CONTAM_CLEAN'
 include { CONTAM_CLEAN_BATCH } from './modules/aaftf/CONTAM_CLEAN_BATCH'
 include { SOURPURGE  } from './modules/aaftf/SOURPURGE'
+include { TAXON_PHYLUM } from './modules/aaftf/TAXON_PHYLUM'
 include { RMDUP      } from './modules/aaftf/RMDUP'
 include { POLISH     } from './modules/aaftf/POLISH'
 include { SORT       } from './modules/aaftf/SORT'
@@ -99,6 +100,17 @@ workflow {
     def skip_fcsgx     = (params.getOrDefault('skip_fcsgx', true)     as String).toBoolean()
     def skip_sourpurge = (params.getOrDefault('skip_sourpurge', true) as String).toBoolean()
     def run_depth      = (params.getOrDefault('run_depth', true)      as String).toBoolean()
+
+    // AAFTF >= 0.7 removed these values; fail early with a clear message instead of
+    // an argparse error inside the container.
+    def ok_assemblers = ['spades', 'megahit', 'unicycler']
+    def ok_polishers  = ['polca', 'pypolca', 'polypolish', 'nextpolish2', 'racon']
+    if (!(params.assembler in ok_assemblers)) {
+        error "assembler='${params.assembler}' is not supported by AAFTF >= 0.7 (use one of ${ok_assemblers.join(', ')})"
+    }
+    if (!(params.polisher in ok_polishers)) {
+        error "polisher='${params.polisher}' is not supported by AAFTF >= 0.7 (use one of ${ok_polishers.join(', ')})"
+    }
     def vec_method     = params.getOrDefault('vector_screen_method', 'vecscreen')
 
     // --reuse_asm V11,V20: take these samples' assemblies from
@@ -227,6 +239,14 @@ workflow {
     //   fcs_gx (NCBI FCS-GX purge) AND/OR sourpurge (sourmash purge)
     // Both can run; fcs_gx first then sourpurge, or either alone.
     def ch_purged = ch_vec
+    // taxonkit runs in its own container (params.taxonkit_container): the AAFTF
+    // >= 0.7 image no longer ships it. One cheap task per sample gives the
+    // phylum taxid (FCS-GX) and phylum name (taxpurge).
+    def ch_phylum = Channel.empty()
+    if (!skip_fcsgx || !skip_sourpurge) {
+        TAXON_PHYLUM(samples_ch.map { s, r1, r2, t -> tuple(s, t) })
+        ch_phylum = TAXON_PHYLUM.out.phylum.map { s, tid, nm -> tuple(s, tid.text.trim(), nm.text.trim()) }
+    }
     if (!skip_fcsgx) {
         // The FCS-GX database (~465 GB) is far too expensive to rsync-stage
         // once per genome, so above contam_clean_batch_size=0 we batch
@@ -235,7 +255,7 @@ workflow {
         // Set contam_clean_batch_size = 0 to fall back to the original
         // one-job-per-genome CONTAM_CLEAN process.
         int contam_clean_batch_size = params.getOrDefault('contam_clean_batch_size', 100) as int
-        def items_ch = ch_vec.join(samples_ch.map { s, r1, r2, t -> tuple(s, t) })
+        def items_ch = ch_vec.join(ch_phylum.map { s, tid, nm -> tuple(s, tid) })
             .map { s, f, t -> tuple(s, f.name, t, f) }
 
         if (contam_clean_batch_size > 0) {
@@ -279,7 +299,7 @@ workflow {
         }
     }
     if (!skip_sourpurge) {
-        SOURPURGE(ch_purged.join(samples_ch.map { s, r1, r2, t -> tuple(s, t) }))
+        SOURPURGE(ch_purged.join(ch_phylum.map { s, tid, nm -> tuple(s, nm) }))
         ch_purged = SOURPURGE.out.clean
     }
 

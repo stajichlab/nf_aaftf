@@ -18,12 +18,14 @@ process POLISH {
     AAFTF polish --method ${params.polisher} \
         -i ${asm} -o ${sample}.polished.fasta \
         -c ${task.cpus} -m ${params.spades_memory} \
-        --left ${filtered_1} --right ${filtered_2} \
+        -1 ${filtered_1} -2 ${filtered_2} \
         -w polish_work_${sample}
     gzip -c ${sample}.polished.fasta > ${sample}.polished.fasta.gz
     ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
-        'AAFTF=AAFTF --version' \\
-        'pilon=pilon --version 2>&1 | head -1' \\
+        'AAFTF=AAFTF --version 2>&1 | grep -E '\\''^AAFTF [0-9]'\\'' | head -1' \\
+        'polypolish=polypolish --version' \\
+        'pypolca=pypolca --version 2>&1 | grep -E '\\''^pypolca, version'\\'' | head -1' \\
+        'racon=racon --version' \\
         'bwa=bwa 2>&1 | grep -i '\\''^Version'\\''' \\
         'samtools=samtools --version | head -1' \\
         "polisher=echo ${params.polisher}"
