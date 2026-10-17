@@ -22,18 +22,28 @@ process CONTAM_CLEAN {
     echo "CONTAM_CLEAN: ${sample} phylum_taxid=${phylum}"
 
     # The FCS-GX database is large; stage it to node-local scratch once per sample.
-    STAGE="\${SCRATCH:?}/fcsgx_stage_\${sample}"
+    STAGE="\${SCRATCH:?}/fcsgx_stage_${sample}"
     mkdir -p "\$STAGE"
     rsync -a --delete ${params.fcsgx_db}/ "\$STAGE/"
     if [ ! -s "\$STAGE/all.gxi" ]; then
         echo "[ERROR] FCS-GX DB staging failed: \$STAGE/all.gxi missing (is ${params.fcsgx_db} bound into the container?)" >&2
         exit 1
     fi
-    AAFTF fcs_gx_purge --db "\$STAGE/all" \\
+    # AAFTF >= 0.7: -o is an output DIRECTORY that receives <input prefix>.fcsgx_cleaned.fasta and
+    # <input prefix>.fcs_gx_report.txt. Link the input as <sample>.fa so the prefix is the sample.
+    mkdir -p fcs_in fcs_out
+    ln -sf "\$(readlink -f ${asm})" fcs_in/${sample}.fa
+    AAFTF fcs_gx_purge -d "\$STAGE/all" \\
         -t "${phylum}" \\
-        -i ${asm} -o ${sample}.contam_clean.fasta \\
+        -i fcs_in/${sample}.fa -c ${task.cpus} -o fcs_out \\
         -w fcsgx_work_${sample}
     rm -rf "\$STAGE"
+    # The exit code is not a reliable success signal; require the cleaned file.
+    if [ ! -s fcs_out/${sample}.fcsgx_cleaned.fasta ]; then
+        echo "CONTAM_CLEAN: ERROR: fcs_gx_purge produced no cleaned FASTA for ${sample}" >&2
+        exit 1
+    fi
+    cp fcs_out/${sample}.fcsgx_cleaned.fasta ${sample}.contam_clean.fasta
     gzip -c ${sample}.contam_clean.fasta > ${sample}.contam_clean.fasta.gz
     ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
         'AAFTF=AAFTF --version 2>&1 | grep -E '\\''^AAFTF [0-9]'\\'' | head -1' \\

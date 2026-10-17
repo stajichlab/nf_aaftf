@@ -75,19 +75,25 @@ BATCH_EOF
         fi
         echo "[\$i/\$n_total][INFO] \$sample phylum_taxid=\$phylum"
 
-        cleaned_tmp="\$DEST/\${sample}.contam_clean.fasta.tmp"
-        if AAFTF fcs_gx_purge --db "\$STAGE/all" \\
+        # AAFTF >= 0.7: -o is an output DIRECTORY that receives <input prefix>.fcsgx_cleaned.fasta and
+        # <input prefix>.fcs_gx_report.txt. Link the input as <sample>.fa so the prefix is the sample.
+        mkdir -p fcs_in "fcs_out_\${sample}"
+        ln -sf "\$(readlink -f "\$fname")" "fcs_in/\${sample}.fa"
+        cleaned_tmp="fcs_out_\${sample}/\${sample}.fcsgx_cleaned.fasta"
+        # The exit code is not a reliable success signal; require the cleaned file.
+        if AAFTF fcs_gx_purge -d "\$STAGE/all" \\
             -t "\$phylum" \\
-            -i "\$fname" -o "\$cleaned_tmp" \\
-            -w fcsgx_work_\${sample}; then
+            -i "fcs_in/\${sample}.fa" -c ${task.cpus} -o "fcs_out_\${sample}" \\
+            -w fcsgx_work_\${sample} \\
+            && [ -s "\$cleaned_tmp" ]; then
             gzip -c "\$cleaned_tmp" > "\${target}.tmp"
             mv "\${target}.tmp" "\$target"
-            rm -f "\$cleaned_tmp"
+            rm -rf "fcs_out_\${sample}"
             echo "[\$i/\$n_total][OK] \$sample -> \$target"
             printf '%s\\t%s\\n' "\$sample" "\$target" >> \$MANIFEST
         else
             echo "[\$i/\$n_total][FAIL] fcs_gx_purge failed for \$sample" >&2
-            rm -f "\$cleaned_tmp"
+            rm -rf "fcs_out_\${sample}"
             fcs_fails=\$((fcs_fails+1))
         fi
     done < batch.tsv
