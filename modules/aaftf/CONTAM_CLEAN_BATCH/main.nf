@@ -107,6 +107,14 @@ BATCH_EOF
         exit 1
     fi
     echo "[INFO] batch ${task.index} complete: \$n_done cleaned assemblies"
+    while IFS=\$'\\t' read -r s_id _ _; do
+        [ -z "\$s_id" ] && continue
+        ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/\${s_id}/versions" "${task.process}" "\$s_id" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
+            'AAFTF=AAFTF --version' \\
+            'fcs_gx=command -v gx >/dev/null && ls \$(dirname \$(command -v gx))/../conda-meta 2>/dev/null | grep ncbi-fcs-gx | head -1' \\
+            'taxonkit=taxonkit version' \\
+            "fcs_gx_db=readlink -f ${params.fcsgx_db}"
+    done < batch.tsv
     """
 
     stub:

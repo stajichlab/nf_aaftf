@@ -16,6 +16,8 @@ process SORT {
     # and drop contigs shorter than params.min_contig_len.
     AAFTF sort -i ${asm} -o ${sample}.sorted.fasta \
         -ml ${params.min_contig_len} -n ${sample}
+    ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
+        'AAFTF=AAFTF --version'
     """
 
     stub:

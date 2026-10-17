@@ -272,3 +272,13 @@ partition time limits (2h cap on `short`), the BBMap `PairStreamer` bug
   (CONTAM_CLEAN / SPAdes escalation). Verify with `sinfo`.
 - AAFTF image + reference DBs are lab-shared under
   `/bigdata/stajichlab/shared/{singularity_cache,lib}`.
+
+## Tool versions per sample
+
+Each per-sample process runs `bin/record_versions.sh` at the end of its script.
+It runs the real `--version` commands inside the task container and writes
+`<outdir>/sample_versions/<sample>/versions/<STEP>.versions.yml` (container image,
+pipeline version/commit, host and time are included). Merge into one TSV per
+sample, and optionally one combined TSV:
+
+    bin/merge_versions.py results/sample_versions --all results/tool_versions.tsv

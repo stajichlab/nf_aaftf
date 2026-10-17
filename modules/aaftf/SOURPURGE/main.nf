@@ -31,6 +31,11 @@ process SOURPURGE {
         -p "\$PHYLUM" -c ${task.cpus} \\
         --AAFTF_DB /opt/aaftf_db
     gzip -c ${sample}.sourpurge.fasta > ${sample}.sourpurge.fasta.gz
+    ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
+        'AAFTF=AAFTF --version' \\
+        'sourmash=sourmash --version' \\
+        'taxonkit=taxonkit version' \\
+        "aaftf_db=readlink -f ${params.aaftf_db}"
     """
 
     stub:

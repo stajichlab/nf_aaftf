@@ -60,6 +60,11 @@ process AAFTF_TRIM {
     # Merge-only reads (from fastp pass 1) pass forward as the single-end set.
     # Trimmomatic has no merge step, so an empty _MG is emitted for it.
     ${merged_out}
+    ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
+        'AAFTF=AAFTF --version' \\
+        'fastp=fastp --version' \\
+        'bbduk=bbduk.sh --version 2>&1 | grep -i '\\''BBTools version'\\''' \\
+        'pigz=pigz --version'
     """
 
     stub:

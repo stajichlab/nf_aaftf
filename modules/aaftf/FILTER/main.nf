@@ -26,6 +26,13 @@ process FILTER {
         -c ${task.cpus} -m 16 --AAFTF_DB /opt/aaftf_db \
         --left ${merged} \
         -o ${sample}
+    ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
+        'AAFTF=AAFTF --version' \\
+        'bbduk=bbduk.sh --version 2>&1 | grep -i '\\''BBTools version'\\''' \\
+        'bwa=bwa 2>&1 | grep -i '\\''^Version'\\''' \\
+        'minimap2=minimap2 --version' \\
+        'samtools=samtools --version | head -1' \\
+        "filter_aligner=echo ${params.filter_aligner}"
     """
 
     stub:
