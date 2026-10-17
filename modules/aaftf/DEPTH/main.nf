@@ -15,12 +15,13 @@ process DEPTH {
     # contigs as possible contaminants / organellar). Disable plots to avoid the
     # matplotlib dependency in headless runs.
     AAFTF depth -i ${asm} -o ${sample}.depth.txt \
-        -l ${filtered_1} -r ${filtered_2} --no-plot \
+        -1 ${filtered_1} -2 ${filtered_2} --no-plot \
         -c ${task.cpus} -w depth_work_${sample}
     ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
-        'AAFTF=AAFTF --version' \\
+        'AAFTF=AAFTF --version 2>&1 | grep -E '\\''^AAFTF [0-9]'\\'' | head -1' \\
         'minimap2=minimap2 --version' \\
-        'samtools=samtools --version | head -1'
+        'samtools=samtools --version | head -1' \\
+        'mosdepth=mosdepth --version'
     """
 
     stub:

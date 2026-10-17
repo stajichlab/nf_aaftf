@@ -14,12 +14,12 @@ process VECSCREEN {
     """
     # BLASTN screen of contigs against UniVec + contaminant DBs (vecscreen mode).
     # Note: this runs fully inside the AAFTF container — no external FCS tool.
+    export AAFTF_DB=/opt/aaftf_db   # AAFTF >= 0.7 reads the database folder from the AAFTF_DB environment variable (the --AAFTF_DB flag was removed)
     AAFTF vecscreen -c ${task.cpus} \\
-        --AAFTF_DB /opt/aaftf_db \\
         -i ${assembly} -o ${sample}.vecscreen.fasta
     gzip -c ${sample}.vecscreen.fasta > ${sample}.vecscreen.fasta.gz
     ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
-        'AAFTF=AAFTF --version' \\
+        'AAFTF=AAFTF --version 2>&1 | grep -E '\\''^AAFTF [0-9]'\\'' | head -1' \\
         'blastn=blastn -version | head -1'
     """
 

@@ -41,7 +41,7 @@ process AAFTF_TRIM {
     AAFTF trim --method ${m1} \
         ${dedup} ${merge} ${cuttail} --minlen ${params.minlen} \
         -c ${task.cpus} -m 8 ${trimmomatic_args} \
-        --left ${reads1} --right ${reads2} \
+        -1 ${reads1} -2 ${reads2} \
         -o ${sample}_pass1
 
     # Pass 2: bbduk — a second adapter/quality pass (JGI-style BBDuk QC).
@@ -61,7 +61,7 @@ process AAFTF_TRIM {
     # Trimmomatic has no merge step, so an empty _MG is emitted for it.
     ${merged_out}
     ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
-        'AAFTF=AAFTF --version' \\
+        'AAFTF=AAFTF --version 2>&1 | grep -E '\\''^AAFTF [0-9]'\\'' | head -1' \\
         'fastp=fastp --version' \\
         'bbduk=bbduk.sh --version 2>&1 | grep -i '\\''BBTools version'\\''' \\
         'pigz=pigz --version'

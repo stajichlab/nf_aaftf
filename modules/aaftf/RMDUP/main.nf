@@ -18,7 +18,7 @@ process RMDUP {
         -c ${task.cpus} -ml ${params.min_contig_len}
     gzip -c ${sample}.rmdup.fasta > ${sample}.rmdup.fasta.gz
     ${projectDir}/bin/record_versions.sh "${params.outdir}/sample_versions/${sample}/versions" "${task.process}" "${sample}" "${task.container ?: 'native'}" "${workflow.manifest.version ?: ''}@${workflow.commitId ?: workflow.revision ?: 'local'}" \\
-        'AAFTF=AAFTF --version' \\
+        'AAFTF=AAFTF --version 2>&1 | grep -E '\\''^AAFTF [0-9]'\\'' | head -1' \\
         'minimap2=minimap2 --version' \\
         'rmdup_tools=echo minimap2'
     """
