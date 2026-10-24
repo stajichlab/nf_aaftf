@@ -6,7 +6,7 @@ nextflow.enable.dsl = 2
  * nf_aaftf — AAFTF genome assembly + cleanup for short-read (Illumina) genomes.
  *
  * Flow:  TRIM -> FILTER -> ASSEMBLE -> [vector_screen] -> [contamination_screen]
- *        -> RMDUP -> POLISH -> SORT -> {COMPRESS, ASSESS, [optional DEPTH]}
+ *        -> [MITOCHONDRION] -> RMDUP -> POLISH -> SORT -> {COMPRESS, ASSESS, [optional DEPTH]}
  *
  * The final assembly fasta is published bgzip-compressed (results/sort/*.sorted.fasta.gz)
  * so it stays indexable via samtools/bcftools while saving disk space.
@@ -36,6 +36,8 @@ include { CONTAM_CLEAN } from './modules/aaftf/CONTAM_CLEAN'
 include { CONTAM_CLEAN_BATCH } from './modules/aaftf/CONTAM_CLEAN_BATCH'
 include { SOURPURGE  } from './modules/aaftf/SOURPURGE'
 include { TAXON_PHYLUM } from './modules/aaftf/TAXON_PHYLUM'
+include { MITOCHONDRION } from './modules/aaftf/MITOCHONDRION'
+include { BUILD_CONTAMDB } from './modules/aaftf/BUILD_CONTAMDB'
 include { RMDUP      } from './modules/aaftf/RMDUP'
 include { POLISH     } from './modules/aaftf/POLISH'
 include { SORT       } from './modules/aaftf/SORT'
@@ -90,8 +92,37 @@ def vecDone(String s, boolean skipVecscreen) {
     f.exists() && f.size() > 0
 }
 
+// ── Start-up check: stop in seconds, with the exact fix, instead of failing deep in a step ────────
+// Looks only at what the enabled steps need. Skipped for -stub-run. Returns a list of problems.
+def setupProblems(boolean skip_mito, boolean skip_fcsgx) {
+    def problems = []
+    if (params.container_engine != 'docker' && !file(params.aaftf_sif).exists()) {
+        problems << "AAFTF image not found: ${params.aaftf_sif}\n      Pull it, or pass --aaftf_sif <SIF built from AAFTF main >= 0904010>."
+    }
+    def contamdb = file("${params.aaftf_db}/contamdb.fa")
+    if (!contamdb.exists() || contamdb.size() == 0) {
+        problems << "contamdb.fa (needed by FILTER) not found in ${params.aaftf_db}\n      Build it once:  nextflow run ${projectDir} -profile aaftf --setup_db true --aaftf_db ${params.aaftf_db}"
+    }
+    if (!skip_mito) {
+        def odb = params.organelle_db
+        def dl  = "module load ncbi-blast/2.16.0+ && ${projectDir}/bin/download_organelle_db.sh -o ${odb}"
+        def requireHit = params.getOrDefault('mitochondrion_require_hit', true).toString().toBoolean()
+        def veto = params.getOrDefault('rdna_veto_cov', 0.2) as double
+        if (requireHit && !file("${odb}/mitochondrion/mitochondrion.nhr").exists()) {
+            problems << "mitochondrion BLAST database not found in ${odb}/mitochondrion\n      Build it once (login node):  ${dl} mitochondrion\n      Or run with --mitochondrion_require_hit false, or --skip_mitochondrion true."
+        }
+        if (veto > 0 && !file("${odb}/rdna/rdna.nal").exists()) {
+            problems << "rDNA BLAST database not found in ${odb}/rdna\n      Build it once (login node):  ${dl} rdna\n      Or run with --rdna_veto_cov 0, or --skip_mitochondrion true."
+        }
+    }
+    if (!skip_fcsgx && !file("${params.fcsgx_db}/all.gxi").exists()) {
+        problems << "FCS-GX database not found: ${params.fcsgx_db}/all.gxi\n      Set --fcsgx_db to the gxdb folder, or run with --skip_fcsgx true."
+    }
+    return problems
+}
+
 // ── Workflow ────────────────────────────────────────────────────────────────
-workflow {
+workflow AAFTF_PIPELINE {
     main:
 
     // Boolean CLI params arrive as strings ("true"/"false"), so `--skip_fcsgx
@@ -100,6 +131,14 @@ workflow {
     def skip_fcsgx     = (params.getOrDefault('skip_fcsgx', true)     as String).toBoolean()
     def skip_sourpurge = (params.getOrDefault('skip_sourpurge', true) as String).toBoolean()
     def run_depth      = (params.getOrDefault('run_depth', true)      as String).toBoolean()
+    def skip_mitochondrion = (params.getOrDefault('skip_mitochondrion', false) as String).toBoolean()
+
+    if (!workflow.stubRun) {
+        def problems = setupProblems(skip_mitochondrion, skip_fcsgx)
+        if (problems) {
+            error "Setup is incomplete (${problems.size()} item${problems.size() == 1 ? '' : 's'}):\n" + problems.collect { "  - ${it}" }.join("\n")
+        }
+    }
 
     // AAFTF >= 0.7 removed these values; fail early with a clear message instead of
     // an argparse error inside the container.
@@ -303,6 +342,26 @@ workflow {
         ch_purged = SOURPURGE.out.clean
     }
 
+    // ── Stage 4c: mitochondrial contig removal ──────────────────────
+    // Runs after all contamination screening so candidate organelle contigs are handled
+    // together, and before RMDUP. Contigs flagged MITO by AAFTF depth AND validated by
+    // whole-contig coverage against RefSeq mitochondrial genomes (organelle_validate.py), and that
+    // are not rDNA (NCBI fungal 18S/28S/ITS), are written to
+    // results/mitochondrion/<sample>.mitochondrion.fasta.gz and dropped from the assembly.
+    // Unvalidated MITO candidates and depth OUTLIER contigs that are not MITO stay in the
+    // assembly and raise a warning. (A PLASTID step for chloroplast contigs is kept on the
+    // feat/plastid-step branch until it has been tested on plastid-bearing data.)
+    if (!skip_mitochondrion) {
+        MITOCHONDRION(ch_purged.join(ch_filtered.map { s, f1, f2, fu -> tuple(s, f1, f2) }))
+        MITOCHONDRION.out.warnings.subscribe { s, f ->
+            def w = f.text.trim()
+            if (w) {
+                log.warn "MITOCHONDRION ${s}: contigs kept that need review (MITO_* = candidate not removed; OUTLIER = high depth, not MITO):\n${w}"
+            }
+        }
+        ch_purged = MITOCHONDRION.out.nuclear.map { s, f, r -> tuple(s, f) }
+    }
+
     // ── Stage 5: finishing ──────────────────────────────────────────
     // NOTE: must use ch_filtered (fresh + filter_reuse merged), not
     // FILTER.out.filtered directly -- that channel now only carries the
@@ -316,5 +375,23 @@ workflow {
 
     if (run_depth) {
         DEPTH(SORT.out.sorted.join(ch_filtered.map { s, f1, f2, fu -> tuple(s, f1, f2) }))
+    }
+}
+
+// ── One-time setup: nextflow run <pipeline> -profile aaftf --setup_db true [--aaftf_db <folder>] ──
+// Builds AAFTF's own contamination database (contamdb) into params.aaftf_db (default <launchDir>/db).
+// It skips work that is already done. The organelle databases are built by bin/download_organelle_db.sh.
+workflow SETUP_DB {
+    file(params.aaftf_db).mkdirs()
+    BUILD_CONTAMDB()
+}
+
+// ── Entry workflow ──────────────────────────────────────────────────────────
+// Nextflow's strict parser has no -entry option, so a parameter chooses between setup and the pipeline.
+workflow {
+    if (params.getOrDefault('setup_db', false).toString().toBoolean()) {
+        SETUP_DB()
+    } else {
+        AAFTF_PIPELINE()
     }
 }
