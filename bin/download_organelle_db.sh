@@ -2,13 +2,13 @@
 # download_organelle_db.sh — download RefSeq organelle genomes and build BLAST databases for the
 # nf_aaftf ORGANELLE (mitochondrion) and PLASTID steps.
 #
-#   bin/download_organelle_db.sh [-o OUTDIR] [mitochondrion|plastid|rdna|both|all]
-#     both = mitochondrion + plastid;  all = both + rdna
+#   bin/download_organelle_db.sh [-o OUTDIR] [mitochondrion|rdna|all]
+#     all = mitochondrion + rdna.  (A plastid database is not built: the PLASTID step is on feat/plastid-step.)
 #
 # OUTDIR defaults to /bigdata/stajichlab/shared/lib/AAFTF_DB/organelle (params.organelle_db).
 # Creates OUTDIR/<kind>/{<kind>.*.genomic.fna.gz, RELEASE_NUMBER, FILES.txt, <kind>.n*} where the
 # BLAST DB prefix is OUTDIR/<kind>/<kind>. The file list is read from the NCBI directory index
-# (mitochondrion has one genomic file, plastid several), so new RefSeq splits are picked up.
+# (RefSeq may split a kind into several genomic files), so new RefSeq splits are picked up.
 # rdna: NCBI's fungal 18S/28S/ITS and eukaryote-wide SSU/LSU/ITS BLAST databases
 # (ftp.ncbi.nlm.nih.gov/blast/db), joined into one alias database OUTDIR/rdna/rdna. The pipeline uses it
 # to protect nuclear rDNA contigs from removal (rDNA is high copy and can look like an organelle in the
@@ -19,7 +19,7 @@
 # record that a nuclear 7 kb high-copy contig matched at 94.5% identity). Set ORGANELLE_ACC_REGEX='.'
 # to keep everything. Only *.genomic.fna.gz is used; the .gbff and .protein.faa files are not needed for whole-contig
 # screening. Run on a login node (compute nodes may lack internet) with makeblastdb on PATH:
-#   module load ncbi-blast/2.16.0+ && bin/download_organelle_db.sh both
+#   module load ncbi-blast/2.16.0+ && bin/download_organelle_db.sh all
 set -euo pipefail
 
 BASE="https://ftp.ncbi.nlm.nih.gov/refseq/release"
@@ -31,8 +31,8 @@ while getopts "o:h" opt; do
     esac
 done
 shift $((OPTIND - 1))
-WHAT="${1:-both}"
-case "$WHAT" in mitochondrion|plastid|rdna) KINDS=("$WHAT") ;; both) KINDS=(mitochondrion plastid) ;; all) KINDS=(mitochondrion plastid rdna) ;; *) echo "unknown: $WHAT" >&2; exit 1 ;; esac
+WHAT="${1:-all}"
+case "$WHAT" in mitochondrion|rdna) KINDS=("$WHAT") ;; all) KINDS=(mitochondrion rdna) ;; *) echo "unknown: $WHAT" >&2; exit 1 ;; esac
 ACC_REGEX="${ORGANELLE_ACC_REGEX:-^NC_}"
 command -v makeblastdb >/dev/null || { echo "ERROR: makeblastdb not on PATH (module load ncbi-blast/2.16.0+)" >&2; exit 1; }
 

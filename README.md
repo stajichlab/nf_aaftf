@@ -306,7 +306,7 @@ This pipeline targets the AAFTF 0.7 command line. Changes that affect the module
   `-m` is an integer number of GB.
 - `AAFTF --version` / `-V` prints the git-tag version (for example `0.7.0-beta.4-15+g1f51deb`).
 
-## Organelle contig removal (MITOCHONDRION, PLASTID)
+## Mitochondrial contig removal (MITOCHONDRION)
 
 Runs after the contamination screens (FCS-GX, sourpurge) and before RMDUP. The earlier
 screens do not look for organelle sequence: `fcs_screen`/`vecscreen` find adaptors and vectors
@@ -323,7 +323,7 @@ flag (AAFTF main commit 0904010 or later). `aaftf_sif` is pinned to
    >= `mito_min_cov` (0.5) of the contig. A NUMT inside a nuclear contig covers a small fraction
    and the contig is not a candidate anyway. `--mitochondrion_require_hit false` removes all
    candidates without this check.
-3. rDNA veto: a contig that is >= `rdna_veto_cov` (0.2) fungal rDNA (NCBI 18S, 28S, ITS) is never
+3. rDNA veto: a contig that is >= `rdna_veto_cov` (0.2) rDNA (NCBI fungal and eukaryote-wide 18S/SSU, 28S/LSU, ITS) is never
    removed (`--rdna_veto_cov 0` disables the veto). On the MTK samples the 5 mitochondrial contigs
    have 0% rDNA coverage and 5 of the 6 other high-depth contigs (the rDNA repeat unit and its
    fragments) have 42-92% per database.
@@ -333,21 +333,21 @@ flag (AAFTF main commit 0904010 or later). `aaftf_sif` is pinned to
    `MITO_KEPT_UNVALIDATED` and `MITO_KEPT_RDNA` (candidates not removed) and `OUTLIER` (depth > mean +
    3 SD, not MITO), each OUTLIER labeled `rDNA-like` or `unexplained`. OUTLIER contigs are never removed.
 
-**PLASTID** (off by default, `--skip_plastid false`, needs MITOCHONDRION; not yet tested on lichen,
-algal or plant data): chloroplast contigs are not AT-rich, so the MITO rule misses them. Candidates
-are the depth OUTLIER and ELEVATED contigs still in the assembly. They are searched against RefSeq
-plastid genomes and removed when covered >= `plastid_min_cov` (0.5) and not rDNA (same veto).
-Output: `results/plastid/<sample>.plastid.fasta.gz` and `<sample>.plastid.validation.tsv`.
+**Plastid (chloroplast) contigs** are not handled here. A `PLASTID` step exists on the branch
+`feat/plastid-step`. It is not in this release: on a cyanobacterial negative control it removed 4
+rRNA-operon contigs (587-1,953 bp) that map at 100% identity to the genome, because cyanobacterial rRNA
+matches cyanelle and chromatophore plastid genomes at 88-91% identity. It will come back after it is
+tested on plastid-bearing data (a plant, a green alga, a lichen) with a depth gate.
 
 **Databases.** Build once on a login node (compute nodes may have no internet):
 
     module load ncbi-blast/2.16.0+
-    bin/download_organelle_db.sh all        # mitochondrion | plastid | rdna | both | all; -o DIR
+    bin/download_organelle_db.sh all        # mitochondrion | rdna | all; -o DIR
 
-This downloads the RefSeq `*.genomic.fna.gz` files (names are read from the directory index; plastid
-has several) and NCBI's fungal 18S/28S/ITS BLAST databases into `params.organelle_db`, and builds the
-BLAST DBs there. Only accessions matching `ORGANELLE_ACC_REGEX` (default `^NC_`) are indexed for
-mitochondrion and plastid. The RefSeq mitochondrion file also holds shotgun scaffolds (`NW_`, `NT_`),
+This downloads the RefSeq mitochondrion `*.genomic.fna.gz` files (names are read from the directory
+index) and NCBI's fungal and eukaryote-wide rRNA/ITS BLAST databases into `params.organelle_db`, and
+builds the BLAST DBs there. Only accessions matching `ORGANELLE_ACC_REGEX` (default `^NC_`) are indexed
+for mitochondrion. The RefSeq mitochondrion file also holds shotgun scaffolds (`NW_`, `NT_`),
 and in release 237 `NW_026622727.1` (8.6 kb) matched non-mitochondrial 7 kb high-copy contigs at 94.5%
 identity; with `^NC_` only, those contigs covered 9-27% and the mitochondrial contigs covered 100%.
 The release number is stored in `RELEASE_NUMBER` and recorded in the version files.
