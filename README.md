@@ -351,3 +351,14 @@ mitochondrion and plastid. The RefSeq mitochondrion file also holds shotgun scaf
 and in release 237 `NW_026622727.1` (8.6 kb) matched non-mitochondrial 7 kb high-copy contigs at 94.5%
 identity; with `^NC_` only, those contigs covered 9-27% and the mitochondrial contigs covered 100%.
 The release number is stored in `RELEASE_NUMBER` and recorded in the version files.
+
+**AAFTF's own contamination database.** The pinned AAFTF (main `ccd6c26`) no longer reads the old
+`contamdb` text file. `FILTER` (and `VECSCREEN`, if used) stop with
+`missing database: contamdb (contamdb.fa; searched /opt/aaftf_db)` until `contamdb.fa` and its BLAST
+database exist in `params.aaftf_db`. Build it once, on a login node, into that folder:
+
+    apptainer exec -B /bigdata -B <aaftf_db>:/opt/aaftf_db <aaftf_sif> AAFTF database contamdb
+
+It downloads UniVec_Core, PhiX and the BBTools lambda and adapter sequences, and the old `contamdb`
+file in the same folder is left alone. To test without changing a shared folder, build it in a private
+folder and pass `--aaftf_db <folder>`.
