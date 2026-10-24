@@ -26,7 +26,7 @@ process SOURPURGE {
     # AAFTF >= 0.7: `sourpurge` was split into `taxpurge` (sourmash taxonomy screen) and
     # `covpurge` (bwa low-coverage screen, needs reads). This step is the taxonomy screen.
     # Needs the sourmash databases in the AAFTF_DB folder (`AAFTF database taxpurge`).
-    export AAFTF_DB=${params.getOrDefault('aaftf_db_shared', null) ? '/opt/aaftf_db:/opt/aaftf_db_shared' : '/opt/aaftf_db'}
+    export AAFTF_DB=/opt/aaftf_db
     AAFTF taxpurge \\
         -i ${asm} -o ${sample}.sourpurge.fasta \\
         -p "\$PHYLUM" -c ${task.cpus}

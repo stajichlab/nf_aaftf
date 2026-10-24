@@ -371,6 +371,5 @@ anything by itself.
 2. **Mitochondrion and rDNA databases** (about 700 MB, shared by all projects), built by
    `bin/download_organelle_db.sh` as described under *Mitochondrial contig removal* below.
 
-`params.aaftf_db_shared` (default `null`) can name a second, read-only folder for large databases that many
-projects share. Both folders are bound into the container and listed in `$AAFTF_DB` (first the project
-folder, which AAFTF writes to, then the shared one).
+To share one `contamdb` between projects, point every run at the same folder: build it once with
+`--setup_db true --aaftf_db <shared folder>` and pass the same `--aaftf_db` to each run.

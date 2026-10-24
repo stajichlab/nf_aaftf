@@ -14,7 +14,7 @@ process VECSCREEN {
     """
     # BLASTN screen of contigs against UniVec + contaminant DBs (vecscreen mode).
     # Note: this runs fully inside the AAFTF container — no external FCS tool.
-    export AAFTF_DB=${params.getOrDefault('aaftf_db_shared', null) ? '/opt/aaftf_db:/opt/aaftf_db_shared' : '/opt/aaftf_db'}   # AAFTF >= 0.7 reads the database folder from the AAFTF_DB environment variable (the --AAFTF_DB flag was removed)
+    export AAFTF_DB=/opt/aaftf_db   # AAFTF >= 0.7 reads the database folder from the AAFTF_DB environment variable (the --AAFTF_DB flag was removed)
     AAFTF vecscreen -c ${task.cpus} \\
         -i ${assembly} -o ${sample}.vecscreen.fasta
     gzip -c ${sample}.vecscreen.fasta > ${sample}.vecscreen.fasta.gz

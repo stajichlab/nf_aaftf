@@ -14,7 +14,7 @@ process FILTER {
 
     script:
     """
-    export AAFTF_DB=${params.getOrDefault('aaftf_db_shared', null) ? '/opt/aaftf_db:/opt/aaftf_db_shared' : '/opt/aaftf_db'}   # AAFTF >= 0.7 reads the database folder from the AAFTF_DB environment variable (the --AAFTF_DB flag was removed)
+    export AAFTF_DB=/opt/aaftf_db   # AAFTF >= 0.7 reads the database folder from the AAFTF_DB environment variable (the --AAFTF_DB flag was removed)
     # Paired-end reads: filter against phiX + common contaminant/vector DBs.
     AAFTF filter --aligner ${params.filter_aligner} \
         -c ${task.cpus} -m 16 \

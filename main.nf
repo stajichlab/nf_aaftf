@@ -99,9 +99,9 @@ def setupProblems(boolean skip_mito, boolean skip_fcsgx) {
     if (params.container_engine != 'docker' && !file(params.aaftf_sif).exists()) {
         problems << "AAFTF image not found: ${params.aaftf_sif}\n      Pull it, or pass --aaftf_sif <SIF built from AAFTF main >= 0904010>."
     }
-    def dbs = [params.aaftf_db, params.getOrDefault('aaftf_db_shared', null)].findAll { it }
-    if (!dbs.any { file("${it}/contamdb.fa").exists() && file("${it}/contamdb.fa").size() > 0 }) {
-        problems << "contamdb.fa (needed by FILTER) not found in ${dbs.join(' or ')}\n      Build it once:  nextflow run ${projectDir} -profile aaftf --setup_db true --aaftf_db ${params.aaftf_db}"
+    def contamdb = file("${params.aaftf_db}/contamdb.fa")
+    if (!contamdb.exists() || contamdb.size() == 0) {
+        problems << "contamdb.fa (needed by FILTER) not found in ${params.aaftf_db}\n      Build it once:  nextflow run ${projectDir} -profile aaftf --setup_db true --aaftf_db ${params.aaftf_db}"
     }
     if (!skip_mito) {
         def odb = params.organelle_db
