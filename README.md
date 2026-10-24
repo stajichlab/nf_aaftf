@@ -352,13 +352,25 @@ and in release 237 `NW_026622727.1` (8.6 kb) matched non-mitochondrial 7 kb high
 identity; with `^NC_` only, those contigs covered 9-27% and the mitochondrial contigs covered 100%.
 The release number is stored in `RELEASE_NUMBER` and recorded in the version files.
 
-**AAFTF's own contamination database.** The pinned AAFTF (main `ccd6c26`) no longer reads the old
-`contamdb` text file. `FILTER` (and `VECSCREEN`, if used) stop with
-`missing database: contamdb (contamdb.fa; searched /opt/aaftf_db)` until `contamdb.fa` and its BLAST
-database exist in `params.aaftf_db`. Build it once, on a login node, into that folder:
+## First-time setup
 
-    apptainer exec -B /bigdata -B <aaftf_db>:/opt/aaftf_db <aaftf_sif> AAFTF database contamdb
+Two kinds of reference data are needed. The pipeline checks for them when it starts and stops within
+seconds, printing the exact command to run, if something it needs is missing. It never downloads
+anything by itself.
 
-It downloads UniVec_Core, PhiX and the BBTools lambda and adapter sequences, and the old `contamdb`
-file in the same folder is left alone. To test without changing a shared folder, build it in a private
-folder and pass `--aaftf_db <folder>`.
+1. **AAFTF's contamination database (`contamdb`)**, about 5 MB. The pinned AAFTF (main `ccd6c26`) no longer
+   reads the old `contamdb` text file; `FILTER` needs `contamdb.fa` and its BLAST files. Build it once per
+   project, in the launch directory:
+
+       nextflow run stajichlab/nf_aaftf -profile aaftf --setup_db true
+
+   It writes to `params.aaftf_db`, default `<launchDir>/db`, and skips what already exists. Pass
+   `--aaftf_db <folder>` to use another folder (for example one shared by several projects) for both
+   `SETUP_DB` and the run. It downloads UniVec_Core, PhiX and the BBTools lambda and adapter sequences, and
+   leaves any other file in the folder alone.
+2. **Mitochondrion and rDNA databases** (about 700 MB, shared by all projects), built by
+   `bin/download_organelle_db.sh` as described under *Mitochondrial contig removal* below.
+
+`params.aaftf_db_shared` (default `null`) can name a second, read-only folder for large databases that many
+projects share. Both folders are bound into the container and listed in `$AAFTF_DB` (first the project
+folder, which AAFTF writes to, then the shared one).
