@@ -36,6 +36,7 @@ include { CONTAM_CLEAN } from './modules/aaftf/CONTAM_CLEAN'
 include { CONTAM_CLEAN_BATCH } from './modules/aaftf/CONTAM_CLEAN_BATCH'
 include { SOURPURGE  } from './modules/aaftf/SOURPURGE'
 include { TAXON_PHYLUM } from './modules/aaftf/TAXON_PHYLUM'
+include { MERGE_LIBRARIES } from './modules/aaftf/MERGE_LIBRARIES'
 include { ORGANELLE } from './modules/aaftf/ORGANELLE'
 include { BUILD_CONTAMDB } from './modules/aaftf/BUILD_CONTAMDB'
 include { RMDUP      } from './modules/aaftf/RMDUP'
@@ -189,7 +190,7 @@ workflow AAFTF_PIPELINE {
     // Synchronous pre-scan (samplesheet parsed directly, not via the
     // reactive Channel below) purely so the two reuse axes get the same
     // up-front log visibility as --reuse_asm above.
-    def all_sample_ids = file(params.samples).splitCsv(header: true, sep: ',').collect { it.sample.trim() }
+    def all_sample_ids = file(params.samples).splitCsv(header: true, sep: ',').collect { it.sample.trim() }.unique()
     def filter_reuse_ids = all_sample_ids.findAll { filterDone(it) }
     def vec_reuse_ids    = all_sample_ids.findAll { vecDone(it, skip_vecscreen) }
     if (filter_reuse_ids) {
@@ -202,15 +203,26 @@ workflow AAFTF_PIPELINE {
     // Sample sheet: sample,read_1,read_2 [,taxid]. The optional taxid column
     // feeds the optional FCS-GX / sourpurge steps (NCBI taxonomy id, e.g.
     // 4751 Fungi / 4890 Ascomycota); falls back to params.fcs_taxid when absent.
+    // A sample may appear on SEVERAL rows, one row per sequencing library.
+    // Rows are grouped by sample. Libraries are merged into one read pair
+    // (MERGE_LIBRARIES) before TRIM. All rows of a sample must carry the same taxid.
     Channel
         .fromPath(params.samples, checkIfExists: true)
         .splitCsv(header: true, sep: ',')
         .map { row ->
             def tax = row.taxid ? row.taxid.trim() : params.fcs_taxid
             tuple(row.sample.trim(),
-                  file("${params.indir}/${row.read_1}", checkIfExists: true),
-                  file("${params.indir}/${row.read_2}", checkIfExists: true),
+                  [file("${params.indir}/${row.read_1}", checkIfExists: true),
+                   file("${params.indir}/${row.read_2}", checkIfExists: true)],
                   tax)
+        }
+        .groupTuple(by: 0)
+        .map { s, pairs, taxes ->
+            if (taxes.unique().size() > 1) {
+                error("Sample ${s} has different taxid values on its rows: ${taxes.unique().join(', ')}")
+            }
+            def sorted = pairs.sort { it[0].name }
+            tuple(s, sorted.collect { it[0] }, sorted.collect { it[1] }, taxes[0])
         }
         .ifEmpty { error("No samples found in ${params.samples}") }
         .take( (params.n_test as int) > 0 ? (params.n_test as int) : Integer.MAX_VALUE )
@@ -226,7 +238,16 @@ workflow AAFTF_PIPELINE {
         filter_reuse: filterDone(s)
         fresh:        true
     }
-    AAFTF_TRIM(ch_samples_split.fresh.map { s, r1, r2, t -> tuple(s, r1, r2) })
+    // Samples with more than one library are merged into one read pair first.
+    def ch_fresh_split = ch_samples_split.fresh.branch { s, r1, r2, t ->
+        multi:  r1.size() > 1
+        single: true
+    }
+    MERGE_LIBRARIES(ch_fresh_split.multi.map { s, r1, r2, t -> tuple(s, r1, r2) })
+    AAFTF_TRIM(
+        ch_fresh_split.single.map { s, r1, r2, t -> tuple(s, r1[0], r2[0]) }
+            .mix(MERGE_LIBRARIES.out.merged)
+    )
     FILTER(AAFTF_TRIM.out.trimmed)
     def ch_filtered = FILTER.out.filtered.mix(
         ch_samples_split.filter_reuse.map { s, r1, r2, t ->
