@@ -34,7 +34,16 @@ process AAFTF_TRIM {
         """
     def merged_out = fastp ? "mv ${sample}_pass1_MG.fastq.gz ${sample}_MG.fastq.gz" :
                              "gzip -c /dev/null > ${sample}_MG.fastq.gz"
+    // BBTools picks its own Java heap when none is given (4.5 GB inside a 32 GB job). The interleave step used
+    // shuffle.sh, which holds every read in memory: it ran out of heap on large samples even at 24 GB, and
+    // the Java crash left the shell running. reformat.sh interleaves the pairs as a stream, so it needs almost
+    // no memory. Give the BBTools steps 75% of the task memory anyway.
+    def heap = Math.max(4, (task.memory.toGiga() * 0.75) as int)
     """
+    set -euo pipefail
+    # (the aaftf profile sets shell=/bin/bash without -ue; without this a crashed step still exits 0)
+    trap 'echo "AAFTF_TRIM: ERROR: command failed at line \$LINENO of .command.sh (exit \$?)" >&2' ERR
+
     # Pass 1: ${m1} — QC + adaptor trimming. fastp adds dedup + merge + 3' qual
     # (cuttail using PHRED); trimmomatic uses its own leading/trailing/sliding
     # window settings.
@@ -49,13 +58,17 @@ process AAFTF_TRIM {
     # bbduk 39.80 in the image crashes its PairStreamer on variable-length paired
     # reads ("List size mismatch"), dropping all reads. Feed it an INTERLEAVED
     # single file instead (same effective result), then de-interleave.
-    shuffle.sh in1=${sample}_pass1_1P.fastq.gz in2=${sample}_pass1_2P.fastq.gz out=${sample}_pass1_ivl.fq
+    reformat.sh -Xmx${heap}g in1=${sample}_pass1_1P.fastq.gz in2=${sample}_pass1_2P.fastq.gz out=${sample}_pass1_ivl.fq
+    # BBTools can return 0 after a Java crash, so check that each step really wrote its output.
+    test -s ${sample}_pass1_ivl.fq
     bbduk.sh -Xmx${params.trim_memory}g \\
         ref=adapters t=${task.cpus} ktrim=r k=23 mink=11 \\
         minlen=${params.minlen} hdist=1 maq=10 ftm=5 tpe tbo \\
         overwrite=true in=${sample}_pass1_ivl.fq interleaved=true \\
         out=${sample}_ivl.fq
-    reformat.sh in=${sample}_ivl.fq out1=${sample}_1P.fastq.gz out2=${sample}_2P.fastq.gz
+    test -s ${sample}_ivl.fq
+    reformat.sh -Xmx${heap}g in=${sample}_ivl.fq out1=${sample}_1P.fastq.gz out2=${sample}_2P.fastq.gz
+    test -s ${sample}_1P.fastq.gz && test -s ${sample}_2P.fastq.gz
 
     # Merge-only reads (from fastp pass 1) pass forward as the single-end set.
     # Trimmomatic has no merge step, so an empty _MG is emitted for it.
