@@ -64,7 +64,7 @@ The pipeline is container-only. Set a single engine flag:
 
 | `params.container_engine` | Container used |
 |---|---|
-| `singularity` (default) | cached SIF `AAFTF-0.7.0-beta.4-18-g9ce56a1.sif` (from `ghcr.io/stajichlab/aaftf:main`, commit 9ce56a1) |
+| `singularity` (default) | cached SIF `AAFTF-main-ccd6c26.sif` (pulled from `ghcr.io/stajichlab/aaftf:main`, commit ccd6c26; pinned until a stable 0.7.0 release) |
 | `docker`                 | `docker://ghcr.io/stajichlab/aaftf:latest` |
 
 The AAFTF image carries its toolchain (`spades.py`, `megahit`, `bbduk.sh`, `fastp`, `minimap2`,
