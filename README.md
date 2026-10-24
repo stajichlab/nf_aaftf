@@ -64,7 +64,7 @@ The pipeline is container-only. Set a single engine flag:
 
 | `params.container_engine` | Container used |
 |---|---|
-| `singularity` (default) | cached SIF `AAFTF-0.7.0-beta.4-18-g9ce56a1.sif` (from `ghcr.io/stajichlab/aaftf:main`, commit 9ce56a1) |
+| `singularity` (default) | cached SIF `AAFTF-main-ccd6c26.sif` (pulled from `ghcr.io/stajichlab/aaftf:main`, commit ccd6c26; pinned until a stable 0.7.0 release) |
 | `docker`                 | `docker://ghcr.io/stajichlab/aaftf:latest` |
 
 The AAFTF image carries its toolchain (`spades.py`, `megahit`, `bbduk.sh`, `fastp`, `minimap2`,
@@ -305,3 +305,60 @@ This pipeline targets the AAFTF 0.7 command line. Changes that affect the module
 - `assemble --method` is required, SPAdes runs with `--careful --isolate` by default, and
   `-m` is an integer number of GB.
 - `AAFTF --version` / `-V` prints the git-tag version (for example `0.7.0-beta.4-15+g1f51deb`).
+
+## Organelle contig removal (MITOCHONDRION, PLASTID)
+
+Runs after the contamination screens (FCS-GX, sourpurge) and before RMDUP. The earlier
+screens do not look for organelle sequence: `fcs_screen`/`vecscreen` find adaptors and vectors
+only, and FCS-GX reported no contigs for the MTK samples. Needs an AAFTF image with the depth MITO
+flag (AAFTF main commit 0904010 or later). `aaftf_sif` is pinned to
+`AAFTF-main-ccd6c26.sif` (AAFTF 0.7.0-beta.4-27+gccd6c26) until a stable 0.7.0 release.
+
+**MITOCHONDRION** (on by default, `--skip_mitochondrion true` bypasses):
+1. `AAFTF depth` maps the filtered reads to the assembly and flags candidate mitochondrial
+   contigs: depth >= `mito_fold` (5) x the nuclear baseline, GC >= `mito_gc_drop` (10) points
+   below the assembly, length >= `mito_min_len` (1000).
+2. Only those candidates are searched against the RefSeq mitochondrial genomes. A candidate is
+   removed only if the union of its alignments (>= `organelle_min_pident` 80% identity) covers
+   >= `mito_min_cov` (0.5) of the contig. A NUMT inside a nuclear contig covers a small fraction
+   and the contig is not a candidate anyway. `--mitochondrion_require_hit false` removes all
+   candidates without this check.
+3. rDNA veto: a contig that is >= `rdna_veto_cov` (0.2) fungal rDNA (NCBI 18S, 28S, ITS) is never
+   removed (`--rdna_veto_cov 0` disables the veto). On the MTK samples the 5 mitochondrial contigs
+   have 0% rDNA coverage and 5 of the 6 other high-depth contigs (the rDNA repeat unit and its
+   fragments) have 42-92% per database.
+4. Removed contigs: `results/mitochondrion/<sample>.mitochondrion.fasta.gz`. Evidence:
+   `<sample>.mitochondrion.{candidates,validation}.tsv` and `<sample>.mitochondrion.depth.txt`.
+5. Kept but reported in `<sample>.mitochondrion.warnings.txt` and as a pipeline warning:
+   `MITO_KEPT_UNVALIDATED` and `MITO_KEPT_RDNA` (candidates not removed) and `OUTLIER` (depth > mean +
+   3 SD, not MITO), each OUTLIER labeled `rDNA-like` or `unexplained`. OUTLIER contigs are never removed.
+
+**PLASTID** (off by default, `--skip_plastid false`, needs MITOCHONDRION; not yet tested on lichen,
+algal or plant data): chloroplast contigs are not AT-rich, so the MITO rule misses them. Candidates
+are the depth OUTLIER and ELEVATED contigs still in the assembly. They are searched against RefSeq
+plastid genomes and removed when covered >= `plastid_min_cov` (0.5) and not rDNA (same veto).
+Output: `results/plastid/<sample>.plastid.fasta.gz` and `<sample>.plastid.validation.tsv`.
+
+**Databases.** Build once on a login node (compute nodes may have no internet):
+
+    module load ncbi-blast/2.16.0+
+    bin/download_organelle_db.sh all        # mitochondrion | plastid | rdna | both | all; -o DIR
+
+This downloads the RefSeq `*.genomic.fna.gz` files (names are read from the directory index; plastid
+has several) and NCBI's fungal 18S/28S/ITS BLAST databases into `params.organelle_db`, and builds the
+BLAST DBs there. Only accessions matching `ORGANELLE_ACC_REGEX` (default `^NC_`) are indexed for
+mitochondrion and plastid. The RefSeq mitochondrion file also holds shotgun scaffolds (`NW_`, `NT_`),
+and in release 237 `NW_026622727.1` (8.6 kb) matched non-mitochondrial 7 kb high-copy contigs at 94.5%
+identity; with `^NC_` only, those contigs covered 9-27% and the mitochondrial contigs covered 100%.
+The release number is stored in `RELEASE_NUMBER` and recorded in the version files.
+
+**AAFTF's own contamination database.** The pinned AAFTF (main `ccd6c26`) no longer reads the old
+`contamdb` text file. `FILTER` (and `VECSCREEN`, if used) stop with
+`missing database: contamdb (contamdb.fa; searched /opt/aaftf_db)` until `contamdb.fa` and its BLAST
+database exist in `params.aaftf_db`. Build it once, on a login node, into that folder:
+
+    apptainer exec -B /bigdata -B <aaftf_db>:/opt/aaftf_db <aaftf_sif> AAFTF database contamdb
+
+It downloads UniVec_Core, PhiX and the BBTools lambda and adapter sequences, and the old `contamdb`
+file in the same folder is left alone. To test without changing a shared folder, build it in a private
+folder and pass `--aaftf_db <folder>`.

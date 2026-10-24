@@ -6,7 +6,7 @@ nextflow.enable.dsl = 2
  * nf_aaftf — AAFTF genome assembly + cleanup for short-read (Illumina) genomes.
  *
  * Flow:  TRIM -> FILTER -> ASSEMBLE -> [vector_screen] -> [contamination_screen]
- *        -> RMDUP -> POLISH -> SORT -> {COMPRESS, ASSESS, [optional DEPTH]}
+ *        -> [MITOCHONDRION] -> [PLASTID] -> RMDUP -> POLISH -> SORT -> {COMPRESS, ASSESS, [optional DEPTH]}
  *
  * The final assembly fasta is published bgzip-compressed (results/sort/*.sorted.fasta.gz)
  * so it stays indexable via samtools/bcftools while saving disk space.
@@ -36,6 +36,8 @@ include { CONTAM_CLEAN } from './modules/aaftf/CONTAM_CLEAN'
 include { CONTAM_CLEAN_BATCH } from './modules/aaftf/CONTAM_CLEAN_BATCH'
 include { SOURPURGE  } from './modules/aaftf/SOURPURGE'
 include { TAXON_PHYLUM } from './modules/aaftf/TAXON_PHYLUM'
+include { MITOCHONDRION } from './modules/aaftf/MITOCHONDRION'
+include { PLASTID    } from './modules/aaftf/PLASTID'
 include { RMDUP      } from './modules/aaftf/RMDUP'
 include { POLISH     } from './modules/aaftf/POLISH'
 include { SORT       } from './modules/aaftf/SORT'
@@ -100,6 +102,11 @@ workflow {
     def skip_fcsgx     = (params.getOrDefault('skip_fcsgx', true)     as String).toBoolean()
     def skip_sourpurge = (params.getOrDefault('skip_sourpurge', true) as String).toBoolean()
     def run_depth      = (params.getOrDefault('run_depth', true)      as String).toBoolean()
+    def skip_mitochondrion = (params.getOrDefault('skip_mitochondrion', false) as String).toBoolean()
+    def skip_plastid   = (params.getOrDefault('skip_plastid', true)    as String).toBoolean()
+    if (!skip_plastid && skip_mitochondrion) {
+        error "skip_plastid=false needs the MITOCHONDRION step (its depth report selects the plastid candidates); set skip_mitochondrion=false"
+    }
 
     // AAFTF >= 0.7 removed these values; fail early with a clear message instead of
     // an argparse error inside the container.
@@ -301,6 +308,30 @@ workflow {
     if (!skip_sourpurge) {
         SOURPURGE(ch_purged.join(ch_phylum.map { s, tid, nm -> tuple(s, nm) }))
         ch_purged = SOURPURGE.out.clean
+    }
+
+    // ── Stage 4c: organelle (mitochondrion, plastid) contig removal ─
+    // Runs after all contamination screening so candidate organelle contigs are handled
+    // together, and before RMDUP. Contigs flagged MITO by AAFTF depth AND validated by
+    // whole-contig coverage against RefSeq mitochondrial genomes (organelle_validate.py), and that
+    // are not rDNA (NCBI fungal 18S/28S/ITS), are written to
+    // results/mitochondrion/<sample>.mitochondrion.fasta.gz and dropped from the assembly.
+    // Unvalidated MITO candidates and depth OUTLIER contigs that are not MITO stay in the
+    // assembly and raise a warning. PLASTID (optional, off by default) does the same for
+    // plastid candidates (depth OUTLIER/ELEVATED) against RefSeq plastid genomes.
+    if (!skip_mitochondrion) {
+        MITOCHONDRION(ch_purged.join(ch_filtered.map { s, f1, f2, fu -> tuple(s, f1, f2) }))
+        MITOCHONDRION.out.warnings.subscribe { s, f ->
+            def w = f.text.trim()
+            if (w) {
+                log.warn "MITOCHONDRION ${s}: contigs kept that need review (MITO_* = candidate not removed; OUTLIER = high depth, not MITO):\n${w}"
+            }
+        }
+        ch_purged = MITOCHONDRION.out.nuclear.map { s, f, r -> tuple(s, f) }
+        if (!skip_plastid) {
+            PLASTID(MITOCHONDRION.out.nuclear)
+            ch_purged = PLASTID.out.nuclear
+        }
     }
 
     // ── Stage 5: finishing ──────────────────────────────────────────
