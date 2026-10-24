@@ -19,11 +19,18 @@ process MITOCHONDRION {
     def veto_cov    = params.getOrDefault('rdna_veto_cov', 0.2)
     """
     set -euo pipefail
+    trap 'echo "MITOCHONDRION: ERROR: command failed at line \$LINENO of .command.sh (exit \$?)" >&2' ERR
     # (the aaftf profile sets shell=/bin/bash without -ue, so fail fast explicitly)
+    # Fail early with a clear message if this AAFTF image predates the depth MITO flag.
+    depth_help=\$(AAFTF depth -h 2>&1 || true)
+    if ! grep -q -- '--mito_fold' <<< "\$depth_help"; then
+        echo "MITOCHONDRION: ERROR: this AAFTF image has no 'depth --mito_fold' option; use an image built from AAFTF main >= 0904010 (set --aaftf_sif)" >&2
+        exit 1
+    fi
     DB=${params.organelle_db}
     VALIDATE=${projectDir}/bin/organelle_validate.py
     # fasta_of IDS FASTA > subset
-    fasta_of() { awk 'NR==FNR{k[\$1]=1;next} /^>/{id=substr(\$1,2); p=(id in k)} p' "\$1" "\$2"; }
+    fasta_of() { awk -v ids="\$1" 'BEGIN{while((getline l < ids)>0) k[l]=1} /^>/{id=substr(\$1,2); p=(id in k)} p' "\$2"; }
 
     # 1. Map the filtered reads back to the contamination-cleaned assembly (before RMDUP) and flag
     #    candidate mitochondrial contigs (AAFTF depth: depth >= mito_fold x nuclear baseline,
@@ -84,9 +91,9 @@ process MITOCHONDRION {
     awk -F'\\t' 'NR>1 && \$NF=="removed" {print \$1}' ${sample}.mitochondrion.validation.tsv > remove.ids
 
     # 4. Split: contigs in remove.ids go to the mitochondrion file, all others continue.
-    awk 'NR==FNR{k[\$1]=1;next} /^>/{id=substr(\$1,2); p=(id in k)} p'  remove.ids ${asm} > ${sample}.mitochondrion.fasta
-    awk 'NR==FNR{k[\$1]=1;next} /^>/{id=substr(\$1,2); p=!(id in k)} p' remove.ids ${asm} > ${sample}.nuclear.fasta
-    n_in=\$(grep -c '^>' ${asm}); n_nuc=\$(grep -c '^>' ${sample}.nuclear.fasta); n_mt=\$(grep -c '^>' ${sample}.mitochondrion.fasta)
+    awk -v ids=remove.ids 'BEGIN{while((getline l < ids)>0) k[l]=1} /^>/{id=substr(\$1,2); p=(id in k)} p' ${asm} > ${sample}.mitochondrion.fasta
+    awk -v ids=remove.ids 'BEGIN{while((getline l < ids)>0) k[l]=1} /^>/{id=substr(\$1,2); p=!(id in k)} p' ${asm} > ${sample}.nuclear.fasta
+    n_in=\$(grep -c '^>' ${asm} || true); n_nuc=\$(grep -c '^>' ${sample}.nuclear.fasta || true); n_mt=\$(grep -c '^>' ${sample}.mitochondrion.fasta || true)
     if [ "\$((n_nuc + n_mt))" -ne "\$n_in" ] || [ "\$n_nuc" -eq 0 ]; then
         echo "MITOCHONDRION: ERROR: split mismatch for ${sample}: in=\$n_in nuclear=\$n_nuc mitochondrion=\$n_mt" >&2
         exit 1

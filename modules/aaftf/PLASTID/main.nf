@@ -16,6 +16,7 @@ process PLASTID {
     def veto_cov = params.getOrDefault('rdna_veto_cov', 0.2)
     """
     set -euo pipefail
+    trap 'echo "PLASTID: ERROR: command failed at line \$LINENO of .command.sh (exit \$?)" >&2' ERR
     # (the aaftf profile sets shell=/bin/bash without -ue, so fail fast explicitly)
     DB=${params.organelle_db}
     VALIDATE=${projectDir}/bin/organelle_validate.py
@@ -29,7 +30,7 @@ process PLASTID {
         exit 1
     fi
     awk '/\\*\\* OUTLIER \\(|ELEVATED \\(inspect/ {print \$1}' ${depth_report} > flagged.ids
-    awk 'NR==FNR{k[\$1]=1;next} /^>/{id=substr(\$1,2); p=(id in k)} p' flagged.ids ${asm} > candidates.fasta
+    awk -v ids=flagged.ids 'BEGIN{while((getline l < ids)>0) k[l]=1} /^>/{id=substr(\$1,2); p=(id in k)} p' ${asm} > candidates.fasta
     \$VALIDATE --candidates candidates.fasta --db \$DB/plastid/plastid \\
         --min-cov ${params.plastid_min_cov} --min-pident ${params.organelle_min_pident} --cpus ${task.cpus} \\
         --out plastid_val.tsv --validated plastid_val.ids
@@ -51,9 +52,9 @@ process PLASTID {
           print \$0, r, d }' rdna.tsv plastid_val.tsv > ${sample}.plastid.validation.tsv
     awk -F'\\t' 'NR>1 && \$NF=="removed" {print \$1}' ${sample}.plastid.validation.tsv > remove.ids
 
-    awk 'NR==FNR{k[\$1]=1;next} /^>/{id=substr(\$1,2); p=(id in k)} p'  remove.ids ${asm} > ${sample}.plastid.fasta
-    awk 'NR==FNR{k[\$1]=1;next} /^>/{id=substr(\$1,2); p=!(id in k)} p' remove.ids ${asm} > ${sample}.noplastid.fasta
-    n_in=\$(grep -c '^>' ${asm}); n_keep=\$(grep -c '^>' ${sample}.noplastid.fasta); n_rm=\$(grep -c '^>' ${sample}.plastid.fasta)
+    awk -v ids=remove.ids 'BEGIN{while((getline l < ids)>0) k[l]=1} /^>/{id=substr(\$1,2); p=(id in k)} p' ${asm} > ${sample}.plastid.fasta
+    awk -v ids=remove.ids 'BEGIN{while((getline l < ids)>0) k[l]=1} /^>/{id=substr(\$1,2); p=!(id in k)} p' ${asm} > ${sample}.noplastid.fasta
+    n_in=\$(grep -c '^>' ${asm} || true); n_keep=\$(grep -c '^>' ${sample}.noplastid.fasta || true); n_rm=\$(grep -c '^>' ${sample}.plastid.fasta || true)
     if [ "\$((n_keep + n_rm))" -ne "\$n_in" ] || [ "\$n_keep" -eq 0 ]; then
         echo "PLASTID: ERROR: split mismatch for ${sample}: in=\$n_in kept=\$n_keep plastid=\$n_rm" >&2
         exit 1

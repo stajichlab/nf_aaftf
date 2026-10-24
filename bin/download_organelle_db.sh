@@ -9,9 +9,10 @@
 # Creates OUTDIR/<kind>/{<kind>.*.genomic.fna.gz, RELEASE_NUMBER, FILES.txt, <kind>.n*} where the
 # BLAST DB prefix is OUTDIR/<kind>/<kind>. The file list is read from the NCBI directory index
 # (mitochondrion has one genomic file, plastid several), so new RefSeq splits are picked up.
-# rdna: NCBI's fungal 18S, 28S and ITS RefSeq BLAST databases (ftp.ncbi.nlm.nih.gov/blast/db), joined
-# into one alias database OUTDIR/rdna/rdna. The pipeline uses it to protect nuclear rDNA contigs from
-# removal (rDNA is high copy and can look like an organelle in the depth data).
+# rdna: NCBI's fungal 18S/28S/ITS and eukaryote-wide SSU/LSU/ITS BLAST databases
+# (ftp.ncbi.nlm.nih.gov/blast/db), joined into one alias database OUTDIR/rdna/rdna. The pipeline uses it
+# to protect nuclear rDNA contigs from removal (rDNA is high copy and can look like an organelle in the
+# depth data). The eukaryote-wide sets cover plants and algae, which the fungal sets do not.
 # Only curated RefSeq genomes (accessions matching ORGANELLE_ACC_REGEX, default ^NC_) go into the
 # BLAST DB. The mitochondrion release also holds shotgun scaffolds (NW_, NT_), some of which are
 # mislabeled or contain non-organelle sequence (release 237: NW_026622727.1, an 8.6 kb "mitochondrion"
@@ -41,14 +42,16 @@ for kind in "${KINDS[@]}"; do
     dir="$OUT/$kind"; mkdir -p "$dir"
     if [ "$kind" = rdna ]; then
         command -v blastdb_aliastool >/dev/null || { echo "ERROR: blastdb_aliastool not on PATH" >&2; exit 1; }
-        names="18S_fungal_sequences 28S_fungal_sequences ITS_RefSeq_Fungi"
+        names="18S_fungal_sequences 28S_fungal_sequences ITS_RefSeq_Fungi SSU_eukaryote_rRNA LSU_eukaryote_rRNA ITS_eukaryote_sequences"
         for n in $names; do
             curl -fsS --retry 5 -o "$dir/$n.tar.gz" "https://ftp.ncbi.nlm.nih.gov/blast/db/$n.tar.gz"
             curl -fsS --retry 5 -o "$dir/$n.tar.gz.md5" "https://ftp.ncbi.nlm.nih.gov/blast/db/$n.tar.gz.md5"
             (cd "$dir" && md5sum -c "$n.tar.gz.md5" >/dev/null) || { echo "ERROR: md5 mismatch for $n" >&2; exit 1; }
             tar -xzf "$dir/$n.tar.gz" -C "$dir" && rm -f "$dir/$n.tar.gz"
         done
-        (cd "$dir" && blastdb_aliastool -dblist "$names" -dbtype nucl -out rdna -title "NCBI fungal 18S, 28S, ITS" >/dev/null)
+        [ -f "$dir/rdna.nal" ] && [ ! -f "$dir/rdna_fungal.nal" ] && cp -p "$dir/rdna.nal" "$dir/rdna_fungal.nal"   # keep the first (fungal-only) alias for rollback
+        rm -f "$dir/rdna.nal"
+        (cd "$dir" && blastdb_aliastool -dblist "$names" -dbtype nucl -out rdna -title "NCBI fungal + eukaryote 18S/SSU, 28S/LSU, ITS" >/dev/null)
         echo "$release" > "$dir/RELEASE_NUMBER"
         echo "rdna: alias DB at $dir/rdna ($names)"
         continue
