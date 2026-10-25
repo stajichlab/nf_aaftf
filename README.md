@@ -342,6 +342,20 @@ lavender mitochondrial genome that carries chloroplast-derived DNA (plant mitoch
 0.7 is a provisional value. It needs testing on more taxa, and a plastid cross-check is the longer-term fix.
 A third contig (2.2 kb) reached 56% mitochondrial coverage but is 82% rDNA, so the rDNA veto kept it.
 
+**Results so far.** `MITOCHONDRION` has been run on real reads from five groups of organisms. "Candidates" are contigs the
+depth/GC rule flagged; "removed" are those that also passed validation.
+
+| Organism (data) | Candidates | Removed | Notes |
+|---|---|---|---|
+| *Verticillium dahliae* and *V. nonalfalfae* (4 isolates, UCR) | 1 to 3 per isolate, none in MTK07 | the 4 true mitochondrial contigs of MTK05 and MTK08 (real pipeline runs); none else | MTK06's mitochondrial contig passed validation (coverage 1.0) in a standalone check, not a pipeline run; rDNA repeat contigs kept (labeled `rDNA-like`) |
+| Cyanobacteria: *Synechocystis* PCC 6803, *Anabaena cylindrica* PCC 7122 (public) | 0 | 0 | no organelle expected; 3 *Anabaena* plasmid contigs are depth outliers, reported and kept |
+| *Chlamydomonas reinhardtii* (green alga, public) | 38 (mostly chloroplast) | 1 at 0.7 (the 15.9 kb mitochondrial genome); 2 at 0.5 | at 0.5 a 5.3 kb chloroplast contig was also removed (see above) |
+| *Arabidopsis thaliana* (plant, public) | 2 | 0 | plant mitochondrial DNA is not AT-rich, so the depth/GC rule is not expected to flag it |
+
+Known limits: the depth/GC rule needs a mitochondrial genome that is AT-rich and high-copy (true for fungi and *Chlamydomonas*,
+not for plants), and the RefSeq mitochondrial database contains plant genomes with chloroplast-derived DNA. Chloroplast contigs
+are the job of the plastid step.
+
 **Plastid (chloroplast) contigs** are not handled here. A `PLASTID` step exists on the branch
 `feat/plastid-step`. It is not in this release: on a cyanobacterial negative control it removed 4
 rRNA-operon contigs (587-1,953 bp) that map at 100% identity to the genome, because cyanobacterial rRNA
