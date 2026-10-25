@@ -320,7 +320,7 @@ flag (AAFTF main commit 0904010 or later). `aaftf_sif` is pinned to
    below the assembly, length >= `mito_min_len` (1000).
 2. Only those candidates are searched against the RefSeq mitochondrial genomes. A candidate is
    removed only if the union of its alignments (>= `organelle_min_pident` 80% identity) covers
-   >= `mito_min_cov` (0.5) of the contig. A NUMT inside a nuclear contig covers a small fraction
+   >= `mito_min_cov` (0.7, provisional) of the contig. A NUMT inside a nuclear contig covers a small fraction
    and the contig is not a candidate anyway. `--mitochondrion_require_hit false` removes all
    candidates without this check.
 3. rDNA veto: a contig that is >= `rdna_veto_cov` (0.2) rDNA (NCBI fungal and eukaryote-wide 18S/SSU, 28S/LSU, ITS) is never
@@ -332,6 +332,15 @@ flag (AAFTF main commit 0904010 or later). `aaftf_sif` is pinned to
 5. Kept but reported in `<sample>.mitochondrion.warnings.txt` and as a pipeline warning:
    `MITO_KEPT_UNVALIDATED` and `MITO_KEPT_RDNA` (candidates not removed) and `OUTLIER` (depth > mean +
    3 SD, not MITO), each OUTLIER labeled `rDNA-like` or `unexplained`. OUTLIER contigs are never removed.
+
+**Why `mito_min_cov` is 0.7 and not yet final.** On *Chlamydomonas reinhardtii* (public reads), the depth/GC rule flagged
+38 candidates, mostly the AT-rich, high-copy chloroplast. Validation kept 36 and removed 2: the true mitochondrial genome
+(15.9 kb, 99.4% identical to `NC_001638.1`, 94% covered) and a 5.3 kb **chloroplast** contig (97.7% identical to the
+*Chlamydomonas* chloroplast over 94% of its length). The chloroplast contig validated at only 53% coverage, against a RefSeq
+lavender mitochondrial genome that carries chloroplast-derived DNA (plant mitochondrial genomes often do). A threshold of
+0.5 let it through; 0.7 does not. All the true mitochondrial contigs seen so far (5 fungal, 1 green alga) cover 0.94-1.0, so
+0.7 is a provisional value. It needs testing on more taxa, and a plastid cross-check is the longer-term fix.
+A third contig (2.2 kb) reached 56% mitochondrial coverage but is 82% rDNA, so the rDNA veto kept it.
 
 **Plastid (chloroplast) contigs** are not handled here. A `PLASTID` step exists on the branch
 `feat/plastid-step`. It is not in this release: on a cyanobacterial negative control it removed 4
