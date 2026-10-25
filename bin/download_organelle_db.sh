@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # download_organelle_db.sh — download RefSeq organelle genomes and build BLAST databases for the
-# nf_aaftf ORGANELLE (mitochondrion) and PLASTID steps.
+# nf_aaftf ORGANELLE step (mitochondrion, plastid, rDNA).
 #
-#   bin/download_organelle_db.sh [-o OUTDIR] [mitochondrion|rdna|all]
-#     all = mitochondrion + rdna.  (A plastid database is not built: the PLASTID step is on feat/plastid-step.)
+#   bin/download_organelle_db.sh [-o OUTDIR] [mitochondrion|plastid|rdna|all]
+#     all = mitochondrion + rdna.  plastid (about 1.3 GB on disk) is separate: it is needed only for --skip_plastid false,
+#     and when installed it also stops chloroplast contigs from being removed as mitochondrial.
 #
 # OUTDIR defaults to /bigdata/stajichlab/shared/lib/AAFTF_DB/organelle (params.organelle_db).
 # Creates OUTDIR/<kind>/{<kind>.*.genomic.fna.gz, RELEASE_NUMBER, FILES.txt, <kind>.n*} where the
@@ -32,7 +33,7 @@ while getopts "o:h" opt; do
 done
 shift $((OPTIND - 1))
 WHAT="${1:-all}"
-case "$WHAT" in mitochondrion|rdna) KINDS=("$WHAT") ;; all) KINDS=(mitochondrion rdna) ;; *) echo "unknown: $WHAT" >&2; exit 1 ;; esac
+case "$WHAT" in mitochondrion|plastid|rdna) KINDS=("$WHAT") ;; all) KINDS=(mitochondrion rdna) ;; *) echo "unknown: $WHAT" >&2; exit 1 ;; esac
 ACC_REGEX="${ORGANELLE_ACC_REGEX:-^NC_}"
 command -v makeblastdb >/dev/null || { echo "ERROR: makeblastdb not on PATH (module load ncbi-blast/2.16.0+)" >&2; exit 1; }
 
