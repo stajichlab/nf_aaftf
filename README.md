@@ -306,7 +306,7 @@ This pipeline targets the AAFTF 0.7 command line. Changes that affect the module
   `-m` is an integer number of GB.
 - `AAFTF --version` / `-V` prints the git-tag version (for example `0.7.0-beta.4-15+g1f51deb`).
 
-## Mitochondrial contig removal (MITOCHONDRION)
+## Organelle contig removal (ORGANELLE: mitochondrion, and plastid when switched on)
 
 Runs after the contamination screens (FCS-GX, sourpurge) and before RMDUP. The earlier
 screens do not look for organelle sequence: `fcs_screen`/`vecscreen` find adaptors and vectors
@@ -314,7 +314,7 @@ only, and FCS-GX reported no contigs for the MTK samples. Needs an AAFTF image w
 flag (AAFTF main commit 0904010 or later). `aaftf_sif` is pinned to
 `AAFTF-main-ccd6c26.sif` (AAFTF 0.7.0-beta.4-27+gccd6c26) until a stable 0.7.0 release.
 
-**MITOCHONDRION** (on by default, `--skip_mitochondrion true` bypasses):
+**Mitochondrion** (on by default, `--skip_mitochondrion true` bypasses):
 1. `AAFTF depth` maps the filtered reads to the assembly and flags candidate mitochondrial
    contigs: depth >= `mito_fold` (5) x the nuclear baseline, GC >= `mito_gc_drop` (10) points
    below the assembly, length >= `mito_min_len` (1000).
@@ -342,7 +342,7 @@ lavender mitochondrial genome that carries chloroplast-derived DNA (plant mitoch
 0.7 is a provisional value. It needs testing on more taxa, and a plastid cross-check is the longer-term fix.
 A third contig (2.2 kb) reached 56% mitochondrial coverage but is 82% rDNA, so the rDNA veto kept it.
 
-**Results so far.** `MITOCHONDRION` has been run on real reads from five groups of organisms. "Candidates" are contigs the
+**Results so far.** The mitochondrion step has been run on real reads from five groups of organisms. "Candidates" are contigs the
 depth/GC rule flagged; "removed" are those that also passed validation.
 
 | Organism (data) | Candidates | Removed | Notes |
@@ -356,11 +356,28 @@ Known limits: the depth/GC rule needs a mitochondrial genome that is AT-rich and
 not for plants), and the RefSeq mitochondrial database contains plant genomes with chloroplast-derived DNA. Chloroplast contigs
 are the job of the plastid step.
 
-**Plastid (chloroplast) contigs** are not handled here. A `PLASTID` step exists on the branch
-`feat/plastid-step`. It is not in this release: on a cyanobacterial negative control it removed 4
-rRNA-operon contigs (587-1,953 bp) that map at 100% identity to the genome, because cyanobacterial rRNA
-matches cyanelle and chromatophore plastid genomes at 88-91% identity. It will come back after it is
-tested on plastid-bearing data (a plant, a green alga, a lichen) with a depth gate.
+**Plastid (chloroplast) contigs** (off by default, `--skip_plastid false`; needs the plastid database):
+1. Candidates are contigs at >= `plastid_min_fold` (10) x the nuclear baseline depth and >= `mito_min_len` bp. Set the fold
+   lower for low-copy plastids, for example a lichen photobiont in a metagenome. Depth is the first trigger because an
+   identity match alone is not enough: cyanobacterial rRNA matches plastid genomes at 88-91% identity (see below).
+2. Each candidate is scored by whole-contig coverage against the mitochondrial and plastid databases. The database with the
+   higher coverage wins. A near-tie (within 0.1) goes to mitochondrion only if the depth/GC (MITO) rule flagged the contig,
+   otherwise to plastid, because plant mitochondrial genomes carry chloroplast DNA and a chloroplast contig can cover 100% of
+   both. The winner must cover at least its own minimum (`mito_min_cov`, `plastid_min_cov` 0.4, provisional).
+3. rDNA is never removed (`rdna_veto_cov`). Removed contigs go to `results/plastid/<sample>.plastid.fasta.gz`, with
+   `<sample>.plastid.validation.tsv`. The full decision table is `results/mitochondrion/<sample>.mitochondrion.validation.tsv`.
+4. **The plastid database is optional for the mitochondrion step.** If `<organelle_db>/plastid` is installed, mitochondrial
+   candidates are also scored against it and a chloroplast contig is no longer removed as mitochondrial; with it installed,
+   `mito_min_cov` can be lowered (0.5 found the real *Chlamydomonas* mitochondrial genome that 0.7 missed when relatives
+   were its only reference). Without it, mitochondrial calls work exactly as before.
+
+Evidence for the plastid rules (100 to 105 contigs from *Chlamydomonas*, *Arabidopsis*, two cyanobacteria and three fungi,
+ground truth from each species' own closed organelle genomes): with those genomes in the database, 40/40 chloroplast contigs
+went to plastid, 5/5 mitochondrial to mitochondrion and 60/60 others were kept. With the species' own genomes hidden (relatives
+only, a harder and more realistic test) 30/40 chloroplast contigs were found (all 17 in *Arabidopsis*, 13 of 23 in
+*Chlamydomonas*, whose chloroplast genome is rearranged between species), with no false positives. The earlier plastid step
+that used identity alone removed 4 cyanobacterial rRNA-operon contigs at depth fold 3.2 to 3.9; the depth gate excludes them.
+Not yet tested: a lichen, a metagenome, and clades without close relatives in RefSeq.
 
 **Databases.** Build once on a login node (compute nodes may have no internet):
 
