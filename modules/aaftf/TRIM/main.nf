@@ -38,6 +38,8 @@ process AAFTF_TRIM {
     // shuffle.sh, which holds every read in memory: it ran out of heap on large samples even at 24 GB, and
     // the Java crash left the shell running. reformat.sh interleaves the pairs as a stream, so it needs almost
     // no memory. Give the BBTools steps 75% of the task memory anyway.
+    // The interleaved intermediates are gzipped (BBTools picks gzip from the .gz extension): plain, one was
+    // 15.5 GB for a pair of 1.5 and 1.8 GB read files, about 69% of the work dir.
     def heap = Math.max(4, (task.memory.toGiga() * 0.75) as int)
     """
     set -euo pipefail
@@ -58,16 +60,16 @@ process AAFTF_TRIM {
     # bbduk 39.80 in the image crashes its PairStreamer on variable-length paired
     # reads ("List size mismatch"), dropping all reads. Feed it an INTERLEAVED
     # single file instead (same effective result), then de-interleave.
-    reformat.sh -Xmx${heap}g in1=${sample}_pass1_1P.fastq.gz in2=${sample}_pass1_2P.fastq.gz out=${sample}_pass1_ivl.fq
+    reformat.sh -Xmx${heap}g in1=${sample}_pass1_1P.fastq.gz in2=${sample}_pass1_2P.fastq.gz out=${sample}_pass1_ivl.fq.gz
     # BBTools can return 0 after a Java crash, so check that each step really wrote its output.
-    test -s ${sample}_pass1_ivl.fq
+    test -s ${sample}_pass1_ivl.fq.gz
     bbduk.sh -Xmx${params.trim_memory}g \\
         ref=adapters t=${task.cpus} ktrim=r k=23 mink=11 \\
         minlen=${params.minlen} hdist=1 maq=10 ftm=5 tpe tbo \\
-        overwrite=true in=${sample}_pass1_ivl.fq interleaved=true \\
-        out=${sample}_ivl.fq
-    test -s ${sample}_ivl.fq
-    reformat.sh -Xmx${heap}g in=${sample}_ivl.fq out1=${sample}_1P.fastq.gz out2=${sample}_2P.fastq.gz
+        overwrite=true in=${sample}_pass1_ivl.fq.gz interleaved=true \\
+        out=${sample}_ivl.fq.gz
+    test -s ${sample}_ivl.fq.gz
+    reformat.sh -Xmx${heap}g in=${sample}_ivl.fq.gz out1=${sample}_1P.fastq.gz out2=${sample}_2P.fastq.gz
     test -s ${sample}_1P.fastq.gz && test -s ${sample}_2P.fastq.gz
 
     # Merge-only reads (from fastp pass 1) pass forward as the single-end set.
