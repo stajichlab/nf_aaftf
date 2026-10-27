@@ -2,7 +2,7 @@
 //
 // The FCS-GX database is huge (~465 GB), so rsync-staging it once per SAMPLE
 // (what CONTAM_CLEAN does) pays that full sync cost on every genome. This
-// process stages it ONCE per batch into node-local $SCRATCH and then loops
+// process stages it ONCE per batch into ${params.fcsgx_stage_dir} (default /dev/shm) and then loops
 // AAFTF fcs_gx_purge across every assembly in the batch, amortizing the sync
 // over up to contam_clean_batch_size genomes (each purge itself only takes
 // ~1-2 min once the DB is staged).
@@ -47,9 +47,18 @@ BATCH_EOF
     n_total=\$(grep -c . batch.tsv || true)
     echo "[INFO] batch ${task.index}: \$n_total genomes to consider"
 
-    # Stage the FCS-GX DB into node-local scratch ONCE for the whole batch.
-    STAGE="\${SCRATCH:?}/fcsgx_stage_batch_${task.index}"
+    # Stage the FCS-GX DB into ${params.fcsgx_stage_dir} (default /dev/shm, RAM-backed) ONCE for the whole batch.
+    # The trap removes the staged copy on any exit, including failure and scancel (SIGTERM).
+    STAGE="${params.fcsgx_stage_dir}/fcsgx_\${USER}_\${SLURM_JOB_ID:-\$\$}_batch_${task.index}"
+    trap 'rm -rf "\$STAGE"' EXIT
+    trap 'exit 143' TERM INT
     mkdir -p "\$STAGE"
+    need_kb=\$(du -sk --apparent-size ${params.fcsgx_db} | cut -f1)
+    have_kb=\$(df -k --output=avail "\$STAGE" | tail -1)
+    if [ "\$have_kb" -lt "\$need_kb" ]; then
+        echo "[ERROR] \$STAGE has \$have_kb KB free; FCS-GX DB needs \$need_kb KB. Set --fcsgx_stage_dir to a larger filesystem." >&2
+        exit 1
+    fi
     rsync -a --delete ${params.fcsgx_db}/ "\$STAGE/"
     if [ ! -s "\$STAGE/all.gxi" ]; then
         echo "[ERROR] FCS-GX DB staging failed: \$STAGE/all.gxi missing (is ${params.fcsgx_db} bound into the container?)" >&2
@@ -97,7 +106,6 @@ BATCH_EOF
             fcs_fails=\$((fcs_fails+1))
         fi
     done < batch.tsv
-    rm -rf "\$STAGE"
 
     n_done=\$(grep -c . \$MANIFEST || echo 0)
     if [ "\$fcs_fails" -gt 0 ] || [ "\$n_done" -eq 0 ]; then
