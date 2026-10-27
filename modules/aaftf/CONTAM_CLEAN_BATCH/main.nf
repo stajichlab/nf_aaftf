@@ -49,7 +49,9 @@ BATCH_EOF
 
     # Stage the FCS-GX DB into ${params.fcsgx_stage_dir} (default /dev/shm, RAM-backed) ONCE for the whole batch.
     # The trap removes the staged copy on any exit, including failure and scancel (SIGTERM).
-    STAGE="${params.fcsgx_stage_dir}/fcsgx_\${USER}_\${SLURM_JOB_ID:-\$\$}_batch_${task.index}"
+    # Nextflow starts the container with `env -`, so USER and SLURM_JOB_ID are unset (and set -u would stop on them).
+    # mktemp -d gives each task its own directory, so two tasks on one node cannot share or delete each other's copy.
+    STAGE="\$(mktemp -d "${params.fcsgx_stage_dir}/fcsgx_batch_${task.index}_XXXXXX")" || { echo "[ERROR] cannot create a stage dir under ${params.fcsgx_stage_dir}" >&2; exit 1; }
     trap 'rm -rf "\$STAGE"' EXIT
     trap 'exit 143' TERM INT
     mkdir -p "\$STAGE"
@@ -59,7 +61,10 @@ BATCH_EOF
         echo "[ERROR] \$STAGE has \$have_kb KB free; FCS-GX DB needs \$need_kb KB. Set --fcsgx_stage_dir to a larger filesystem." >&2
         exit 1
     fi
+    echo "[INFO] stage dir \$STAGE: \$(df -h --output=size,avail "\$STAGE" | tail -1 | xargs) (size avail); cgroup memory.max: \$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo n/a)"
+    echo "[TIME] stage_start \$(date +%s)"
     rsync -a --delete ${params.fcsgx_db}/ "\$STAGE/"
+    echo "[TIME] stage_end \$(date +%s)"
     if [ ! -s "\$STAGE/all.gxi" ]; then
         echo "[ERROR] FCS-GX DB staging failed: \$STAGE/all.gxi missing (is ${params.fcsgx_db} bound into the container?)" >&2
         exit 1

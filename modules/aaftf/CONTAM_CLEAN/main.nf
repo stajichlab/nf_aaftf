@@ -23,7 +23,9 @@ process CONTAM_CLEAN {
 
     # The FCS-GX database is large; stage it into ${params.fcsgx_stage_dir} (default /dev/shm, RAM-backed) once per sample.
     # The trap removes the staged copy on any exit, including failure and scancel (SIGTERM).
-    STAGE="${params.fcsgx_stage_dir}/fcsgx_\${USER}_\${SLURM_JOB_ID:-\$\$}_${sample}"
+    # Nextflow starts the container with `env -`, so USER and SLURM_JOB_ID are unset (and set -u would stop on them).
+    # mktemp -d gives each task its own directory, so two tasks on one node cannot share or delete each other's copy.
+    STAGE="\$(mktemp -d "${params.fcsgx_stage_dir}/fcsgx_${sample}_XXXXXX")" || { echo "[ERROR] cannot create a stage dir under ${params.fcsgx_stage_dir}" >&2; exit 1; }
     trap 'rm -rf "\$STAGE"' EXIT
     trap 'exit 143' TERM INT
     mkdir -p "\$STAGE"
