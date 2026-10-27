@@ -21,9 +21,18 @@ process CONTAM_CLEAN {
     fi
     echo "CONTAM_CLEAN: ${sample} phylum_taxid=${phylum}"
 
-    # The FCS-GX database is large; stage it to node-local scratch once per sample.
-    STAGE="\${SCRATCH:?}/fcsgx_stage_${sample}"
+    # The FCS-GX database is large; stage it into ${params.fcsgx_stage_dir} (default /dev/shm, RAM-backed) once per sample.
+    # The trap removes the staged copy on any exit, including failure and scancel (SIGTERM).
+    STAGE="${params.fcsgx_stage_dir}/fcsgx_\${USER}_\${SLURM_JOB_ID:-\$\$}_${sample}"
+    trap 'rm -rf "\$STAGE"' EXIT
+    trap 'exit 143' TERM INT
     mkdir -p "\$STAGE"
+    need_kb=\$(du -sk --apparent-size ${params.fcsgx_db} | cut -f1)
+    have_kb=\$(df -k --output=avail "\$STAGE" | tail -1)
+    if [ "\$have_kb" -lt "\$need_kb" ]; then
+        echo "[ERROR] \$STAGE has \$have_kb KB free; FCS-GX DB needs \$need_kb KB. Set --fcsgx_stage_dir to a larger filesystem." >&2
+        exit 1
+    fi
     rsync -a --delete ${params.fcsgx_db}/ "\$STAGE/"
     if [ ! -s "\$STAGE/all.gxi" ]; then
         echo "[ERROR] FCS-GX DB staging failed: \$STAGE/all.gxi missing (is ${params.fcsgx_db} bound into the container?)" >&2
@@ -37,7 +46,6 @@ process CONTAM_CLEAN {
         -t "${phylum}" \\
         -i fcs_in/${sample}.fa -c ${task.cpus} -o fcs_out \\
         -w fcsgx_work_${sample}
-    rm -rf "\$STAGE"
     # The exit code is not a reliable success signal; require the cleaned file.
     if [ ! -s fcs_out/${sample}.fcsgx_cleaned.fasta ]; then
         echo "CONTAM_CLEAN: ERROR: fcs_gx_purge produced no cleaned FASTA for ${sample}" >&2
