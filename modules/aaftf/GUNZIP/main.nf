@@ -10,15 +10,17 @@ process GUNZIP {
     tuple val(sample), path(gzfile)
 
     output:
-    tuple val(sample), path("out.fasta"), emit: plain
+    // Name the output per sample. CONTAM_CLEAN_BATCH stages every sample's
+    // FASTA into one work dir, so a shared name such as out.fasta collides.
+    tuple val(sample), path("${sample}.fasta"), emit: plain
 
     script:
     """
-    gunzip -c ${gzfile} > out.fasta
+    gunzip -c ${gzfile} > ${sample}.fasta
     """
 
     stub:
     """
-    gunzip -c ${gzfile} > out.fasta
+    gunzip -c ${gzfile} > ${sample}.fasta
     """
 }
